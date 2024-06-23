@@ -88,7 +88,11 @@ def run_model(
     learning_rate: float = 1e-3,
     epochs: int = 50,
 ) -> typing.Tuple[VAE, pd.DataFrame]:
-    vae = VAE(input_dim, hidden_dim, latent_dim)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("Using device:", device)
+
+    vae = VAE(input_dim, hidden_dim, latent_dim).to(device)
     optimizer = optim.Adam(vae.parameters(), lr=learning_rate)
 
     stats = {
@@ -106,11 +110,11 @@ def run_model(
         train_loss, train_mse_loss = 0, 0
 
         for _, (data, _) in enumerate(train_loader):
-            data = data.view(-1, input_dim)
+            data = data.view(-1, input_dim).to(device)
             optimizer.zero_grad()
             x_recon, mu, logvar = vae(data)
-            loss = loss_function(x_recon, data, mu, logvar)
-            mloss = mse_loss_function(x_recon, data)
+            loss = loss_function(x_recon, data, mu, logvar).to(device)
+            mloss = mse_loss_function(x_recon, data).to(device)
             loss.backward()
             train_loss += loss.item()
             train_mse_loss += mloss.item()
@@ -120,20 +124,20 @@ def run_model(
         validation_loss, validation_mse_loss = 0, 0
         with torch.no_grad():
             for data, _ in validation_loader:
-                data = data.view(-1, input_dim)
+                data = data.view(-1, input_dim).to(device)
                 x_recon, mu, logvar = vae(data)
-                loss = loss_function(x_recon, data, mu, logvar)
-                mloss = mse_loss_function(x_recon, data)
+                loss = loss_function(x_recon, data, mu, logvar).to(device)
+                mloss = mse_loss_function(x_recon, data).to(device)
                 validation_loss += loss.item()
                 validation_mse_loss += mloss.item()
 
         test_loss, test_mse_loss = 0, 0
         with torch.no_grad():
             for data, _ in test_loader:
-                data = data.view(-1, input_dim)
+                data = data.view(-1, input_dim).to(device)
                 x_recon, mu, logvar = vae(data)
-                loss = loss_function(x_recon, data, mu, logvar)
-                mloss = mse_loss_function(x_recon, data)
+                loss = loss_function(x_recon, data, mu, logvar).to(device)
+                mloss = mse_loss_function(x_recon, data).to(device)
                 test_loss += loss.item()
                 test_mse_loss += mloss.item()
 
