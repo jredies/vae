@@ -1,3 +1,4 @@
+import functools
 import typing
 
 import numpy as np
@@ -6,21 +7,25 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split
 
 
-def load_mnist(
-    batch_size=128, validation_split=0.2
+def load_image_data(
+    batch_size: int = 128,
+    validation_split: float = 0.2,
+    dataset_name: str = "mnist",
 ) -> typing.Tuple[DataLoader, DataLoader, DataLoader, np.ndarray]:
 
     transform_train = transforms.Compose([transforms.ToTensor()])
     transform_test = transforms.Compose([transforms.ToTensor()])
 
-    train_dataset = datasets.MNIST(
+    dataset = getattr(datasets, dataset_name)
+
+    train_dataset = dataset(
         root="./data",
         train=True,
         transform=transform_train,
         download=True,
     )
 
-    test_dataset = datasets.MNIST(
+    test_dataset = dataset(
         root="./data",
         train=False,
         transform=transform_test,
@@ -44,3 +49,8 @@ def load_mnist(
     dimensionality = np.array(train_dataset.dataset.data[0].shape)
 
     return train_loader, validation_loader, test_loader, dimensionality
+
+
+load_mnist = functools.partial(load_image_data, dataset_name="MNIST")
+load_emnist = functools.partial(load_image_data, dataset_name="EMNIST")
+load_fashion_mnist = functools.partial(load_image_data, dataset_name="FashionMNIST")
