@@ -78,12 +78,15 @@ def mse_loss_function(
     return MSE
 
 
-def main(
+def run_model(
     train_loader: DataLoader,
     validation_loader: DataLoader,
+    test_loader: DataLoader,
     input_dim: int,
     hidden_dim: int,
     latent_dim: int,
+    learning_rate: float = 1e-3,
+    epochs: int = 50,
 ) -> typing.Tuple[VAE, pd.DataFrame]:
     vae = VAE(input_dim, hidden_dim, latent_dim)
     optimizer = optim.Adam(vae.parameters(), lr=learning_rate)
@@ -175,12 +178,15 @@ def main():
 
     dim = np.prod(dim)
 
-    vae, stats = main(
+    vae, stats = run_model(
         train_loader=train_loader,
         validation_loader=validation_loader,
+        test_loader=test_loader,
         input_dim=dim,
         hidden_dim=hidden_dim,
         latent_dim=latent_dim,
+        learning_rate=learning_rate,
+        epochs=epochs,
     )
     save_model(vae, model_path() / "simple_vae.pth")
     stats.to_csv(model_path() / "simple_vae_stats.csv", index=False)
