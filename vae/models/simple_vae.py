@@ -161,7 +161,7 @@ def main(
 sys.excepthook = exception_hook
 
 
-if __name__ == "__main__":
+def main():
     learning_rate = 1e-3
     epochs = 50
     batch_size = 128
@@ -184,3 +184,7 @@ if __name__ == "__main__":
     )
     save_model(vae, model_path() / "simple_vae.pth")
     stats.to_csv(model_path() / "simple_vae_stats.csv", index=False)
+
+
+if __name__ == "__main__":
+    main()
