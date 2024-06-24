@@ -3,4 +3,5 @@ pandas
 scikit-learn
 tensorflow
 torch
+torchmetrics
 ipdb
