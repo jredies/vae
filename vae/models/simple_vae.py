@@ -18,8 +18,8 @@ import pandas as pd
 from vae.data.image_data import load_mnist, load_emnist, load_fashion_mnist
 from vae.utils import exception_hook, model_path
 
-logging.basicConfig(level=logging.INFO)
-log = logging.getLogger(__name__)
+logging.basicconfig(level=logging.info)
+log = logging.getlogger(__name__)
 
 
 class Encoder(nn.Module):
@@ -331,6 +331,16 @@ def run_model(
             pct_val = pct_val * 100
 
             log.info(
+                f"Epoch {epoch} |"
+                f"Train Loss {stats['train_loss'][-1]:.2f} | "
+                f"Val Loss {stats['validation_loss'][-1]:.2f} | "
+                f"Train MSE Loss {stats['train_mse_loss'][-1]:.2f} | "
+                f"Val MSE Loss {stats['validation_mse_loss'][-1]:.2f} | "
+                f"Train SSIM {stats['train_ssim'][-1]:.2f} | "
+                f"Val SSIM {stats['validation_ssim'][-1]:.2f} |"
+                f"Val Loss Chg {pct_val:.2f} %"
+            )
+            print(
                 f"Epoch {epoch} |"
                 f"Train Loss {stats['train_loss'][-1]:.2f} | "
                 f"Val Loss {stats['validation_loss'][-1]:.2f} | "
