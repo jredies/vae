@@ -36,11 +36,13 @@ class Encoder(nn.Module):
         self.dimension = dimension
 
         self.hidden_layers = nn.ModuleList()
+        self.dropout_layers = nn.ModuleList()
+
         for i in range(n_layers - 1):
             in_dim = dimension.loc[i, "encoder_in_dim"]
             out_dim = dimension.loc[i, "encoder_out_dim"]
             self.hidden_layers.append(nn.Linear(in_dim, out_dim))
-            self.hidden_layers.append(nn.Dropout(dropout))
+            self.dropout_layers.append(nn.Dropout(dropout))
 
         last_idx = dimension.shape[0] - 1
         in_dim = dimension.loc[last_idx, "encoder_in_dim"]
@@ -50,11 +52,9 @@ class Encoder(nn.Module):
         self.fc_logvar = nn.Linear(in_dim, out_dim)
 
     def forward(self, x):
-        for layer in self.hidden_layers:
-            if not hasattr(layer, "p"):
-                x = self.activation(layer(x))
-            else:
-                x = layer(x)
+        for idx, layer in enumerate(self.hidden_layers):
+            x = self.activation(layer(x))
+            x = self.dropout_layers[idx](x)
 
         mu = self.fc_mu(x)
         logvar = self.fc_logvar(x)
@@ -76,21 +76,20 @@ class Decoder(nn.Module):
         self.dimension = dimension
 
         self.hidden_layers = nn.ModuleList()
+        self.dropout_layers = nn.ModuleList()
 
         for i in range(n_layers):
             input_dim = dimension.loc[i, "decoder_in_dim"]
             output_dim = dimension.loc[i, "decoder_out_dim"]
             self.hidden_layers.append(nn.Linear(input_dim, output_dim))
             if i < n_layers - 1:
-                self.hidden_layers.append(nn.Dropout(dropout))
+                self.dropout_layers.append(nn.Dropout(dropout))
 
     def forward(self, h):
         for i in range(self.n_hidden_layers - 1):
             layer = self.hidden_layers[i]
-            if not hasattr(layer, "p"):
-                h = self.activation(layer(h))
-            else:
-                h = layer(h)
+            h = self.activation(layer(h))
+            h = self.dropout_layers[i](h)
         x_recon = torch.sigmoid(self.hidden_layers[-1](h))
         return x_recon
 
@@ -267,10 +266,6 @@ def run_model(
         "test_ssim": [],
     }
 
-    best_val_loss = float("inf")
-    patience_counter = 0
-    patience = 3
-
     vae.train()
     for epoch in range(epochs):
 
@@ -329,24 +324,22 @@ def run_model(
             test_ssim=test_ssim,
         )
 
-        log.info(
-            f"Epoch {epoch} |"
-            f"Train Loss {np.round(stats['train_loss'][-1], 2)} | "
-            f"Val Loss {np.round(stats['validation_loss'][-1], 2)} | "
-            f"Train MSE Loss {np.round(stats['train_mse_loss'][-1], 2)} | "
-            f"Val MSE Loss {np.round(stats['validation_mse_loss'][-1], 2)} | "
-            f"Train SSIM {np.round(stats['train_ssim'][-1], 4)} | "
-            f"Val SSIM {np.round(stats['validation_ssim'][-1], 4)} "
-        )
-        val_loss = stats["train_loss"][-1]
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            patience_counter = 0
-        else:
-            patience_counter += 1
-        if patience_counter >= patience:
-            log.info(f"Stopping early at epoch {epoch}")
-            break
+        if epoch > 1:
+            pct_val = (
+                stats["validation_loss"][-1] - stats["validation_loss"][-2]
+            ) / stats["validation_loss"][-2]
+            pct_val = pct_val * 100
+
+            log.info(
+                f"Epoch {epoch} |"
+                f"Train Loss {stats['train_loss'][-1]:.2f} | "
+                f"Val Loss {stats['validation_loss'][-1]:.2f} | "
+                f"Train MSE Loss {stats['train_mse_loss'][-1]:.2f} | "
+                f"Val MSE Loss {stats['validation_mse_loss'][-1]:.2f} | "
+                f"Train SSIM {stats['train_ssim'][-1]:.2f} | "
+                f"Val SSIM {stats['validation_ssim'][-1]:.2f} |"
+                f"Val Loss Chg {pct_val:.2f} %"
+            )
 
     stats = pd.DataFrame(stats)
 
@@ -505,12 +498,12 @@ def print_parameter(
 def string_to_parameter(s: str) -> typing.Tuple[str, str, int, str, float, int]:
     parts = s.split("-")
     data_set = parts[1]
-    activation = parts[3]
-    n_layers = int(parts[5])
-    geometry = parts[7]
-    latent_dim_factor = float(parts[9])
-    batch_size = int(parts[11])
-    dropout = float(parts[13])
+    dropout = float(parts[3])
+    activation = parts[5]
+    n_layers = int(parts[7])
+    geometry = parts[9]
+    latent_dim_factor = float(parts[11])
+    batch_size = int(parts[13])
     return (
         data_set,
         activation,
@@ -524,22 +517,27 @@ def string_to_parameter(s: str) -> typing.Tuple[str, str, int, str, float, int]:
 
 def main():
     data_sets = ["mnist"]
-    activations = ["relu", "mish", "prelu"]
-    n_layerss = [4, 3, 2]
+
+    dropouts = [0.0, 0.3]
+    activations = [
+        "prelu",
+        "relu",
+        "mish",
+    ]
+    n_layerss = [2, 3, 4]
     geometrys = ["geo", "flat"]
     latent_dim_factors = [0.1, 0.025]
-    batch_sizes = [512, 256]
-    dropouts = [0.0, 0.3]
+    batch_sizes = [64, 128]
 
     parameters = list(
         itertools.product(
             data_sets,
+            dropouts,
             activations,
             n_layerss,
             geometrys,
             latent_dim_factors,
             batch_sizes,
-            dropouts,
         )
     )
     log.info(f"Running {len(parameters)} experiments")
@@ -547,14 +545,22 @@ def main():
     for parameter in parameters:
         (
             data_set,
+            dropout,
             activation,
             n_layers,
             geometry,
             latent_dim_factor,
             batch_size,
-            dropout,
         ) = parameter
-        print_parameter(*parameter)
+        print_parameter(
+            data_set=data_set,
+            dropout=dropout,
+            activation=activation,
+            n_layers=n_layers,
+            geometry=geometry,
+            latent_dim_factor=latent_dim_factor,
+            batch_size=batch_size,
+        )
 
         start_time = time.time()
 
