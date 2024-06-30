@@ -1,6 +1,7 @@
 data/*
 notebook/data/*
 vae/store_models/*
+vae/stored_models/summary/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

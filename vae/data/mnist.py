@@ -10,7 +10,16 @@ def load_mnist(
     batch_size=128, validation_split=0.2
 ) -> typing.Tuple[DataLoader, DataLoader, DataLoader, np.ndarray]:
 
-    transform_train = transforms.Compose([transforms.ToTensor()])
+    transform_train = transforms.Compose(
+        [
+            transforms.RandomRotation(5),  # Random rotations
+            # transforms.RandomAffine(
+            #     degrees=0, translate=(0.1, 0.1)
+            # ),  # Random translations
+            # transforms.RandomAffine(degrees=0, scale=(0.9, 1.1)),  # Random scaling
+            transforms.ToTensor(),
+        ]
+    )
     transform_test = transforms.Compose([transforms.ToTensor()])
 
     train_dataset = datasets.MNIST(

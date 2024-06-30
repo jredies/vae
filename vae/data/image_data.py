@@ -11,9 +11,21 @@ def load_image_data(
     batch_size: int = 128,
     validation_split: float = 0.2,
     dataset_name: str = "mnist",
+    rotation: int = 0,
+    translate: float = 0.0,
 ) -> typing.Tuple[DataLoader, DataLoader, DataLoader, np.ndarray]:
 
-    transform_train = transforms.Compose([transforms.ToTensor()])
+    train_list = []
+
+    if rotation > 0:
+        train_list.append(transforms.RandomRotation(rotation))
+    if translate > 0:
+        train_list.append(
+            transforms.RandomAffine(degrees=0, translate=(translate, translate))
+        )
+    train_list.append(transforms.ToTensor())
+
+    transform_train = transforms.Compose(train_list)
     transform_test = transforms.Compose([transforms.ToTensor()])
 
     dataset = getattr(datasets, dataset_name)
