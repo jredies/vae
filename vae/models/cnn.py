@@ -226,8 +226,11 @@ def main():
     params = list(itertools.product(salt_and_pepper_noises))
     args_list = [(salt_and_pepper_noise) for salt_and_pepper_noise in params]
 
-    with Pool(processes=max_concurrent_processes) as pool:
-        pool.starmap(run_experiment, args_list)
+    for args in args_list:
+        run_experiment(*args)
+
+    # with Pool(processes=max_concurrent_processes) as pool:
+    #     pool.starmap(run_experiment, args_list)
 
 
 if __name__ == "__main__":
