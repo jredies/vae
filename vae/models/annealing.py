@@ -11,7 +11,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from vae.models.training import (
     calculate_test_loss,
-    calculate_val_stats,
+    calculate_stats,
     get_loaders,
     select_device,
     initialize_scheduler,
@@ -29,6 +29,11 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger(__name__)
+
+
+def set_learning_rate(optimizer, lr):
+    for param_group in optimizer.param_groups:
+        param_group["lr"] = lr
 
 
 def train_vae(
@@ -50,6 +55,7 @@ def train_vae(
     norm_gradient: bool = False,
     annealing_start: int = 0,
     annealing_stop: int = 100,
+    annealing_method: str = "linear",
     patience: int = 10,
 ):
     device = select_device()
@@ -76,16 +82,23 @@ def train_vae(
     for epoch in range(epochs):
         train_loss, train_mse = 0.0, 0.0
 
-        beta = 1.0
+        beta = calculate_beta(
+            annealing_start=annealing_start,
+            annealing_stop=annealing_stop,
+            annealing_method=annealing_method,
+            epoch=epoch,
+        )
 
-        if (epoch >= annealing_start) and (epoch <= annealing_stop):
-            rel_position = epoch - annealing_start
-            length = annealing_stop - annealing_start
-            if length == 0:
-                beta = 1.0
-            else:
-                beta = float(rel_position) / float(length)
         log.info(f"Epoch: {epoch}, Beta: {beta}")
+        if epoch == annealing_stop:
+            set_learning_rate(optimizer, base_learning_rate)
+            scheduler = initialize_scheduler(
+                optimizer=optimizer,
+                scheduler_type=scheduler_type,
+                plateau_patience=plateau_patience,
+                step_size=step_size,
+                gamma=gamma,
+            )
 
         for _, (data, _) in enumerate(train_loader):
             train_loss, train_mse = training_step(
@@ -94,7 +107,7 @@ def train_vae(
                 vae=vae,
                 optimizer=optimizer,
                 train_loss=train_loss,
-                train_mse_loss=train_mse,
+                train_bce=train_mse,
                 data=data,
                 gaussian_noise=gaussian_noise,
                 salt_and_pepper_noise=salt_and_pepper_noise,
@@ -108,11 +121,12 @@ def train_vae(
         train_mse /= n_train
 
         vae.eval()
-        val_loss, val_mse = calculate_val_stats(
+        val_loss, val_mse = calculate_stats(
             vae=vae,
-            validation_loader=validation_loader,
+            loader=validation_loader,
             device=device,
             input_dim=input_dim,
+            beta=beta,
         )
         test_loss, test_mse = calculate_test_loss(
             vae=vae,
@@ -121,31 +135,30 @@ def train_vae(
             input_dim=input_dim,
         )
 
-        if epoch > annealing_stop:
-            update_scheduler(
-                scheduler_type=scheduler_type,
-                gamma=gamma,
-                scheduler=scheduler,
-                val_loss=val_loss,
-            )
+        update_scheduler(
+            scheduler_type=scheduler_type,
+            gamma=gamma,
+            scheduler=scheduler,
+            val_loss=val_loss,
+        )
 
         write_all_stats(
             writer=writer,
             df_stats=df_stats,
             epoch=epoch,
             train_loss=train_loss,
-            train_mse=train_mse,
+            train_bce=train_mse,
             val_loss=val_loss,
-            val_mse=val_mse,
+            val_kld=val_mse,
             test_loss=test_loss,
-            test_mse=test_mse,
+            test_bce=test_mse,
         )
         log_training_epoch(
             optimizer=optimizer,
             best_val_loss=best_val_loss,
             epoch=epoch,
             train_loss=train_loss,
-            train_mse=train_mse,
+            train_bce=train_mse,
             val_loss=val_loss,
             val_mse=val_mse,
         )
@@ -164,17 +177,50 @@ def train_vae(
     return df_stats
 
 
+def calculate_beta(
+    annealing_start: int,
+    annealing_stop: int,
+    annealing_method: str,
+    epoch: int,
+) -> float:
+    beta = 1.0
+
+    if annealing_method == "linear":
+        if (epoch >= annealing_start) and (epoch <= annealing_stop):
+            rel_position = epoch - annealing_start
+            length = annealing_stop - annealing_start
+            if length == 0:
+                beta = 1.0
+            else:
+                beta = float(rel_position) / float(length)
+    elif annealing_method == "step":
+        if (epoch >= annealing_start) and (epoch <= annealing_stop):
+            beta = 0.0
+    else:
+        raise ValueError(f"Unknown annealing method: {annealing_method}")
+    return beta
+
+
 def main():
     path = "logs/aug"
     train_loader, validation_loader, test_loader, dim = get_loaders()
 
     latent_factor = 0.05
 
-    start = [0, 10, 20]
-    lengths = [20, 50]
+    start = [
+        0,
+        # 10,
+        # 20,
+    ]
+    lengths = [
+        0,
+        # 50,
+        # 75,
+        # 100,
+    ]
     params = itertools.product(start, lengths)
     params = list(params)
-    params = [(0, 0)] + params
+    params = params
 
     for start, length in params:
         vae = create_vae_model(dim=dim, latent_dim_factor=latent_factor)
@@ -189,9 +235,10 @@ def main():
             gamma=0.25,
             annealing_start=start,
             annealing_stop=start + length,
+            annealing_method="step",
         )
 
-        df_stats.to_csv(f"{path}/anneal_start-{start}_len-{length}.csv")
+        df_stats.to_csv(f"{path}/step_start-{start}_len-{length}.csv")
 
 
 if __name__ == "__main__":

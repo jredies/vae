@@ -1,3 +1,4 @@
+import typing
 import torch
 import torch.nn as nn
 
@@ -221,24 +222,15 @@ class VAE(nn.Module):
         activation: str = "mish",
         n_layers: int = 3,
         geometry: str = "flat",
-        dropout: float = 0.3,
-        drop_type: str = "variational",
+        dropout: float = 0.0,
+        drop_type: str = "standard",
+        dimensions: typing.Tuple[int, int] = (28, 28),
+        batch_norm: bool = True,
     ):
         super(VAE, self).__init__()
         self.geometry = geometry
-
-        if activation == "relu":
-            self.activation = nn.ReLU()
-        elif activation == "leaky_relu":
-            self.activation = nn.LeakyReLU(0.2)
-        elif activation == "prelu":
-            self.activation = nn.PReLU()
-        elif activation == "mish":
-            self.activation = nn.Mish()
-        elif activation == "prelu":
-            self.activation = nn.PReLU()
-        elif activation == "SiLU":
-            self.activation = nn.SiLU()
+        self.dimensions = dimensions
+        self.choose_activation(activation)
 
         self.dimension = generate_dimension(
             latent_dim=latent_dim,
@@ -254,6 +246,7 @@ class VAE(nn.Module):
             dimension=self.dimension,
             dropout=dropout,
             drop_type=drop_type,
+            batch_norm=batch_norm,
         )
         self.decoder = Decoder(
             activation=self.activation,
@@ -261,7 +254,22 @@ class VAE(nn.Module):
             dimension=self.dimension,
             dropout=dropout,
             drop_type=drop_type,
+            batch_norm=batch_norm,
         )
+
+    def choose_activation(self, activation: str):
+        if activation == "relu":
+            self.activation = nn.ReLU()
+        elif activation == "leaky_relu":
+            self.activation = nn.LeakyReLU(0.2)
+        elif activation == "prelu":
+            self.activation = nn.PReLU()
+        elif activation == "mish":
+            self.activation = nn.Mish()
+        elif activation == "prelu":
+            self.activation = nn.PReLU()
+        elif activation == "SiLU":
+            self.activation = nn.SiLU()
 
     def reparameterize(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
@@ -281,7 +289,9 @@ def create_vae_model(
     activation: str = "mish",
     n_layers: int = 3,
     geometry: str = "flat",
-    dropout: float = 0.3,
+    dropout: float = 0.0,
+    batch_norm: bool = True,
+    drop_type: str = "variational",
 ) -> VAE:
     hidden_dim = int(np.prod(dim))
     latent_dim = int(np.prod(dim) * latent_dim_factor)
@@ -294,6 +304,8 @@ def create_vae_model(
         n_layers=n_layers,
         geometry=geometry,
         dropout=dropout,
+        batch_norm=batch_norm,
+        drop_type=drop_type,
     )
 
     return model

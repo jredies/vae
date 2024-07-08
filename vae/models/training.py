@@ -1,3 +1,5 @@
+import sys
+import functools
 import pathlib
 import typing
 import logging
@@ -6,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 import torch
+from torch.nn import functional as F
 from torch import nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
@@ -14,8 +17,10 @@ from torch.utils.tensorboard import SummaryWriter
 from vae.models.simple_vae import create_vae_model
 from vae.data.image_data import load_mnist, load_emnist, load_fashion_mnist
 from vae.utils import exception_hook, model_path
-from vae.models.loss import loss_function, mse_loss_function
+from vae.models.loss import standard_loss, reconstruction_loss
+from vae.models.loss import iwae_loss_fast_cnn, iwae_loss_fast
 from vae.models.noise import add_gaussian_noise, add_salt_and_pepper_noise
+from vae.models.utils import select_device
 
 
 logging.basicConfig(
@@ -26,24 +31,49 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-def select_device() -> torch.device:
-    if torch.backends.mps.is_available():
-        device = torch.device("mps")
-    else:
-        device = torch.device("cpu")
-    log.info(f"Using device {device}.")
-    return device
-
-
 def get_loaders(
     rotation: int = 0,
     translate: float = 0.0,
+    batch_size: int = 128,
 ) -> typing.Tuple[DataLoader, DataLoader, DataLoader, np.ndarray]:
     train_loader, validation_loader, test_loader, dimensionality = load_mnist(
         rotation=rotation,
         translate=translate,
+        batch_size=batch_size,
     )
     return train_loader, validation_loader, test_loader, dimensionality
+
+
+def estimate_log_marginal(
+    model,
+    data_loader,
+    device,
+    input_dim: int,
+    num_samples=10,
+    cnn=False,
+) -> float:
+    log_weights = []
+    with torch.no_grad():
+        for x, _ in data_loader:
+            x = get_view(device=device, input_dim=input_dim, x=x, cnn=cnn)
+            if cnn:
+                log_weights.append(
+                    iwae_loss_fast_cnn(model=model, x=x, num_samples=num_samples)
+                )
+            else:
+                log_weights.append(
+                    iwae_loss_fast(model=model, x=x, num_samples=num_samples)
+                )
+
+    return np.array([x.item() for x in log_weights]).mean()
+
+
+def get_view(device, input_dim, x, cnn=False):
+    if cnn:
+        x = x.view(-1, 1, 28, 28).to(device)
+    else:
+        x = x.view(-1, input_dim).to(device)
+    return x
 
 
 def training_step(
@@ -52,15 +82,18 @@ def training_step(
     vae: nn.Module,
     optimizer: torch.optim.Optimizer,
     train_loss: float,
-    train_mse_loss: float,
+    train_recon: float,
     data: typing.Any,
     gaussian_noise: float = 0.0,
     salt_and_pepper_noise: float = 0.0,
     clip_gradient: bool = False,
     norm_gradient: bool = False,
     beta: float = 1.0,
+    loss_fn: typing.Callable = standard_loss,
+    cnn=False,
 ) -> typing.Tuple[float, float]:
-    data = data.view(-1, input_dim).to(device)
+
+    data = get_view(device=device, input_dim=input_dim, x=data, cnn=cnn)
 
     if gaussian_noise > 0.0:
         data = add_gaussian_noise(data, noise_factor=gaussian_noise)
@@ -69,17 +102,20 @@ def training_step(
 
     optimizer.zero_grad()
     x_recon, mu, logvar = vae(data)
-    loss = loss_function(
-        x_recon,
-        data,
+    loss = loss_fn(
+        x_recon=x_recon,
+        x=data,
         mu=mu,
         logvar=logvar,
         beta=beta,
+        model=vae,
+        cnn=cnn,
     ).to(device)
-    mloss = mse_loss_function(x_recon, data).to(device)
+    recon = reconstruction_loss(x_recon=x_recon, x=data).to(device)
     loss.backward()
+
     train_loss += loss.item()
-    train_mse_loss += mloss.item()
+    train_recon += recon.item()
 
     if clip_gradient:
         torch.nn.utils.clip_grad_norm_(vae.parameters(), max_norm=1.0)
@@ -94,53 +130,42 @@ def training_step(
 
     optimizer.step()
 
-    return train_loss, train_mse_loss
+    return train_loss, train_recon
 
 
-def calculate_val_stats(
+def calculate_stats(
     vae: nn.Module,
-    validation_loader: DataLoader,
+    loader: DataLoader,
     device: str,
     input_dim: int,
+    loss_fn: typing.Callable = standard_loss,
+    cnn=False,
 ) -> typing.Tuple[float, float]:
-    val_loss, val_mse = 0.0, 0.0
+    ret_loss, ret_recon = 0.0, 0.0
+
+    mini_batches = 0
+
     with torch.no_grad():
-        for data, _ in validation_loader:
-            data = data.view(-1, input_dim).to(device)
+        for data, _ in loader:
+            data = get_view(device=device, input_dim=input_dim, x=data, cnn=cnn)
             x_recon, mu, logvar = vae(data)
-            loss = loss_function(x_recon, data, mu, logvar).to(device)
-            mloss = mse_loss_function(x_recon, data).to(device)
-            val_loss += loss.item()
-            val_mse += mloss.item()
+            loss = loss_fn(
+                x_recon=x_recon,
+                x=data,
+                mu=mu,
+                logvar=logvar,
+                model=vae,
+                cnn=cnn,
+            ).to(device)
+            recon = reconstruction_loss(x_recon=x_recon, x=data).to(device)
+            ret_loss += loss.item()
+            ret_recon += recon.item()
+            mini_batches += 1
 
-    n_val = len(validation_loader.dataset)
-    val_loss = val_loss / n_val
-    val_mse = val_mse / n_val
+    ret_loss = ret_loss / mini_batches
+    ret_recon = ret_recon / mini_batches
 
-    return val_loss, val_mse
-
-
-def calculate_test_loss(
-    vae: nn.Module,
-    test_loader: DataLoader,
-    device: str,
-    input_dim: int,
-) -> typing.Tuple[float, float]:
-    test_loss, test_mse = 0.0, 0.0
-    with torch.no_grad():
-        for data, _ in test_loader:
-            data = data.view(-1, input_dim).to(device)
-            x_recon, mu, logvar = vae(data)
-            loss = loss_function(x_recon, data, mu, logvar).to(device)
-            mloss = mse_loss_function(x_recon, data).to(device)
-            test_loss += loss.item()
-            test_mse += mloss.item()
-
-    n_test = len(test_loader.dataset)
-    test_loss = test_loss / n_test
-    test_mse = test_mse / n_test
-
-    return test_loss, test_mse
+    return ret_loss, ret_recon
 
 
 def write_stats(
@@ -172,6 +197,9 @@ def train_vae(
     salt_and_pepper_noise: float = 0.0005,
     clip_gradient: bool = False,
     norm_gradient: bool = False,
+    loss_type: str = "standard",
+    iw_samples: int = 5,
+    cnn: bool = False,
 ):
     device = select_device()
     vae = vae.to(device)
@@ -190,44 +218,61 @@ def train_vae(
         optimizer=optimizer,
     )
 
+    loss_fn = standard_loss
+    if loss_type == "standard":
+        loss_fn = standard_loss
+    elif loss_type == "iwae":
+        if cnn:
+            loss_fn = functools.partial(iwae_loss_fast, num_samples=iw_samples)
+        else:
+            loss_fn = functools.partial(iwae_loss_fast_cnn, num_samples=iw_samples)
+    else:
+        raise ValueError(f"Unknown loss type: {loss_type}")
+
     best_val_loss = float("inf")
     patience_counter = 0
 
-    vae.train()
     for epoch in range(epochs):
-        train_loss, train_mse = 0.0, 0.0
+        vae.train()
+        train_loss, train_recon, mini_batches = 0.0, 0.0, 0
 
         for _, (data, _) in enumerate(train_loader):
-            train_loss, train_mse = training_step(
+            train_loss, train_recon = training_step(
                 input_dim=input_dim,
                 device=device,
                 vae=vae,
                 optimizer=optimizer,
                 train_loss=train_loss,
-                train_mse_loss=train_mse,
+                train_recon=train_recon,
                 data=data,
                 gaussian_noise=gaussian_noise,
                 salt_and_pepper_noise=salt_and_pepper_noise,
                 norm_gradient=norm_gradient,
                 clip_gradient=clip_gradient,
+                loss_fn=loss_fn,
+                cnn=cnn,
             )
+            mini_batches += 1
 
-        n_train = len(train_loader.dataset)
-        train_loss /= n_train
-        train_mse /= n_train
+        train_loss /= mini_batches
+        train_recon /= mini_batches
 
         vae.eval()
-        val_loss, val_mse = calculate_val_stats(
+        val_loss, val_recon = calculate_stats(
             vae=vae,
-            validation_loader=validation_loader,
+            loader=validation_loader,
             device=device,
             input_dim=input_dim,
+            loss_fn=loss_fn,
+            cnn=cnn,
         )
-        test_loss, test_mse = calculate_test_loss(
+        test_loss, test_recon = calculate_stats(
             vae=vae,
-            test_loader=test_loader,
+            loader=test_loader,
             device=device,
             input_dim=input_dim,
+            loss_fn=loss_fn,
+            cnn=cnn,
         )
 
         update_scheduler(
@@ -237,27 +282,17 @@ def train_vae(
             val_loss=val_loss,
         )
 
-        write_all_stats(
-            writer=writer,
-            df_stats=df_stats,
-            epoch=epoch,
-            train_loss=train_loss,
-            train_mse=train_mse,
-            val_loss=val_loss,
-            val_mse=val_mse,
-            test_loss=test_loss,
-            test_mse=test_mse,
-        )
         log_training_epoch(
             optimizer=optimizer,
             best_val_loss=best_val_loss,
             epoch=epoch,
             train_loss=train_loss,
-            train_mse=train_mse,
+            train_recon=train_recon,
             val_loss=val_loss,
-            val_mse=val_mse,
+            val_recon=val_recon,
         )
 
+        early_stopping = False
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
@@ -265,6 +300,50 @@ def train_vae(
             patience_counter += 1
         if patience_counter >= patience:
             log.info("Early stopping triggered.")
+            early_stopping = True
+
+        lm_val, lm_train, lm_test = 0.0, 0.0, 0.0
+
+        # if (epoch % 100 == 0) or early_stopping:
+        #     lm_val = estimate_log_marginal(
+        #         model=vae,
+        #         data_loader=validation_loader,
+        #         device=device,
+        #         input_dim=input_dim,
+        #         cnn=cnn,
+        #     )
+        #     lm_train = estimate_log_marginal(
+        #         model=vae,
+        #         data_loader=train_loader,
+        #         device=device,
+        #         input_dim=input_dim,
+        #         cnn=cnn,
+        #     )
+        #     lm_test = estimate_log_marginal(
+        #         model=vae,
+        #         data_loader=test_loader,
+        #         device=device,
+        #         input_dim=input_dim,
+        #         cnn=cnn,
+        #     )
+
+        write_all_stats(
+            writer=writer,
+            df_stats=df_stats,
+            epoch=epoch,
+            train_loss=train_loss,
+            train_lm=lm_train,
+            train_recon=train_recon,
+            val_loss=val_loss,
+            val_lm=lm_val,
+            val_recon=val_recon,
+            test_loss=test_loss,
+            test_lm=lm_test,
+            test_recon=test_recon,
+            best_val_loss=best_val_loss,
+        )
+
+        if early_stopping:
             break
 
     writer.close()
@@ -305,6 +384,12 @@ def initialize_scheduler(
                 optimizer,
                 gamma=gamma,
             )
+    else:
+        scheduler = optim.lr_scheduler.StepLR(
+            optimizer,
+            step_size=1_000_0000,
+            gamma=0.99,
+        )
 
     return scheduler
 
@@ -314,39 +399,62 @@ def write_all_stats(
     df_stats: pd.DataFrame,
     epoch: int,
     train_loss: float,
-    train_mse: float,
+    train_lm: float,
+    train_recon: float,
     val_loss: float,
-    val_mse: float,
+    val_lm: float,
+    val_recon: float,
     test_loss: float,
-    test_mse: float,
+    test_lm: float,
+    test_recon: float,
+    best_val_loss: float,
 ):
     write_stats("train_loss", train_loss, epoch, writer, df_stats)
-    write_stats("train_mse", train_mse, epoch, writer, df_stats)
     write_stats("val_loss", val_loss, epoch, writer, df_stats)
-    write_stats("val_mse", val_mse, epoch, writer, df_stats)
     write_stats("test_loss", test_loss, epoch, writer, df_stats)
-    write_stats("test_mse", test_mse, epoch, writer, df_stats)
+
+    # write_stats("train_lm", train_lm, epoch, writer, df_stats)
+    # write_stats("val_lm", val_lm, epoch, writer, df_stats)
+    # write_stats("test_lm", test_lm, epoch, writer, df_stats)
+
+    write_stats("train_recon", train_recon, epoch, writer, df_stats)
+    write_stats("val_recon", val_recon, epoch, writer, df_stats)
+    write_stats("test_recon", test_recon, epoch, writer, df_stats)
+
+    write_stats(
+        "best_val_loss-val_loss", best_val_loss - val_loss, epoch, writer, df_stats
+    )
 
 
 def log_training_epoch(
-    optimizer, best_val_loss, epoch, train_loss, train_mse, val_loss, val_mse
+    optimizer,
+    best_val_loss,
+    epoch,
+    train_loss,
+    val_loss,
+    train_recon,
+    val_recon,
 ):
     formatted_epoch = str(epoch).zfill(3)
 
     output_string = (
-        f" Epoch {formatted_epoch} |  "
-        f"LR {optimizer.param_groups[0]['lr']:.7f} |"
-        f" Train Loss {train_loss:.2f} |"
-        f" Train MSE {train_mse:.2f} |"
-        f" Validation Loss {val_loss:.2f} |"
-        f" Validation MSE {val_mse:.2f} |"
+        f" Epoch {formatted_epoch} |"
+        f" LR {optimizer.param_groups[0]['lr']:.7f} |"
+        f" Tr Loss {train_loss:.4f} |"
+        # f" Tr LM {train_lm:.4f} |"
+        f" Tr Recon {train_recon:.6f} |"
+        f" Val Loss {val_loss:.4f} |"
+        # f" Val LM {val_lm:.4f} |"
+        f" Val Recon {val_recon:.6f} |"
     )
     if epoch >= 1:
-        pct_val = (val_loss - best_val_loss) / best_val_loss
-        pct_val = pct_val * 100
-        output_string += f" Val improvement from best {pct_val:.2f} % "
+        diff_val = val_loss - best_val_loss
+        output_string += f" Val now - best {diff_val:.6f}"
 
     log.info(output_string)
+
+
+sys.excepthook = exception_hook
 
 
 def main():
@@ -356,25 +464,6 @@ def main():
 
     latent_factor = 0.05
     layer = 3
-
-    vae = create_vae_model(
-        dim=dim,
-        n_layers=layer,
-        geometry="flat",
-        latent_dim_factor=latent_factor,
-    )
-    df_stats = train_vae(
-        vae=vae,
-        train_loader=train_loader,
-        validation_loader=validation_loader,
-        test_loader=test_loader,
-        dim=dim,
-        model_path=path,
-        gamma=0.25,
-        epochs=300,
-        salt_and_pepper_noise=0.0005,
-    )
-    df_stats.to_csv(f"stats.csv")
 
 
 if __name__ == "__main__":
