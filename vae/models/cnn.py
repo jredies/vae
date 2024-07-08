@@ -1,5 +1,6 @@
 import itertools
 from multiprocessing import Pool
+import pathlib
 
 import numpy as np
 import pandas as pd
@@ -179,7 +180,8 @@ class CNN_VAE(nn.Module):
 
 
 def run_experiment(i=1, latent_factor=0.2):
-    path = "logs/aug"
+    path = "outputs/cnn/output"
+    _path = pathlib.Path().mkdir(parents=True, exist_ok=True)
     train_loader, validation_loader, test_loader, dim = get_loaders()
 
     length = np.prod(dim)
@@ -201,11 +203,11 @@ def run_experiment(i=1, latent_factor=0.2):
         loss_type="standard",
         iw_samples=0,
     )
-    df_stats.to_csv(f"{path}/cnn/cnn_i_{i}_latent_{latent_factor}.csv")
+    df_stats.to_csv(_path / f"cnn_i_{i}_latent_{latent_factor}.csv")
 
 
 def main():
-    max_concurrent_processes = 2
+    max_concurrent_processes = 4
 
     latent_dim_factors = [0.025, 0.05, 0.1, 0.2]
     iss = [
