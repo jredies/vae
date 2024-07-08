@@ -220,10 +220,13 @@ def main():
     ]
 
     params = list(itertools.product(iss, latent_dim_factors))
-    args_list = [(i, latent_dim_factor) for i, latent_dim_factor in params]
 
-    with Pool(processes=max_concurrent_processes) as pool:
-        pool.starmap(run_experiment, args_list)
+    for i, latent_dim_factor in params:
+        run_experiment(i, latent_dim_factor)
+
+    # args_list = [(i, latent_dim_factor) for i, latent_dim_factor in params]
+    # with Pool(processes=max_concurrent_processes) as pool:
+    #     pool.starmap(run_experiment, args_list)
 
 
 if __name__ == "__main__":
