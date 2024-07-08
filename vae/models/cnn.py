@@ -181,7 +181,8 @@ class CNN_VAE(nn.Module):
 
 def run_experiment(i=1, latent_factor=0.2):
     path = "outputs/cnn/output"
-    _path = pathlib.Path().mkdir(parents=True, exist_ok=True)
+    _path = pathlib.Path()
+    _path.mkdir(parents=True, exist_ok=True)
     train_loader, validation_loader, test_loader, dim = get_loaders()
 
     length = np.prod(dim)
