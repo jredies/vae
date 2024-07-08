@@ -1,3 +1,4 @@
+import os
 import logging
 
 import torch
@@ -21,9 +22,14 @@ def set_seed(seed):
 
 
 def select_device() -> torch.device:
-    if torch.backends.mps.is_available():
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
         device = torch.device("mps")
+    elif "COLAB_TPU_ADDR" in os.environ:
+        device = torch.device("xla")
     else:
         device = torch.device("cpu")
+
     log.info(f"Using device {device}.")
     return device
