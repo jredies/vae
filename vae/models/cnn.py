@@ -217,8 +217,9 @@ def main():
         # 3,
         # 4,
         # 5,
-        7,
-        8,
+        # 7,
+        # 8,
+        9,
     ]
 
     params = list(itertools.product(iss, latent_dim_factors))
