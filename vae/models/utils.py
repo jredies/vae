@@ -11,6 +11,11 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+# Set environment variables to disable cuDNN execution plans
+os.environ["CUDNN_DISABLE_EXECUTION_PLAN"] = "1"
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+os.environ["TORCH_SHOW_CPP_STACKTRACES"] = "1"
+
 
 def set_seed(seed):
     torch.manual_seed(seed)
@@ -22,6 +27,7 @@ def set_seed(seed):
 
 
 def select_device() -> torch.device:
+
     if torch.cuda.is_available():
         device = torch.device("cuda")
     elif torch.backends.mps.is_available():
