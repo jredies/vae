@@ -1,16 +1,21 @@
+import logging
 import itertools
-from multiprocessing import Pool
 import pathlib
+from multiprocessing import Pool
 
 import numpy as np
-import pandas as pd
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-from vae.models.simple_vae import VAE, Encoder, Decoder
 from vae.models.training import train_vae, get_loaders
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+log = logging.getLogger(__name__)
 
 
 class CNN_Encoder(nn.Module):
@@ -179,7 +184,10 @@ class CNN_VAE(nn.Module):
         return mu + eps * std
 
 
-def run_experiment(i=1, latent_factor=0.2):
+def run_experiment(salt_and_pepper_noise: float = 0.0005):
+    i = 5
+    latent_factor = 0.2
+
     path = "outputs/cnn/output"
     _path = pathlib.Path(path)
     _path.mkdir(parents=True, exist_ok=True)
@@ -190,6 +198,8 @@ def run_experiment(i=1, latent_factor=0.2):
     print("Latent dim: ", latent_dim)
 
     model = CNN_VAE(latent_dim=latent_dim, i=i)
+
+    log.info(f"salt_and_pepper_noise: {salt_and_pepper_noise}")
 
     df_stats = train_vae(
         vae=model,
@@ -203,33 +213,21 @@ def run_experiment(i=1, latent_factor=0.2):
         cnn=True,
         loss_type="standard",
         iw_samples=0,
+        salt_and_pepper_noise=salt_and_pepper_noise,
     )
-    df_stats.to_csv(_path / f"cnn_i_{i}_latent_{latent_factor}.csv")
+    df_stats.to_csv(_path / f"cnn_{salt_and_pepper_noise}.csv")
 
 
 def main():
-    max_concurrent_processes = 4
+    max_concurrent_processes = 5
 
-    latent_dim_factors = [0.025, 0.05, 0.1, 0.2]
-    iss = [
-        # 1,
-        # 2,
-        # 3,
-        # 4,
-        # 5,
-        # 7,
-        # 8,
-        9,
-    ]
+    salt_and_pepper_noises = [0.00025, 0.0005, 0.001, 0.002, 0.0]
 
-    params = list(itertools.product(iss, latent_dim_factors))
+    params = list(itertools.product(salt_and_pepper_noises))
+    args_list = [(salt_and_pepper_noise) for salt_and_pepper_noise in params]
 
-    for i, latent_dim_factor in params:
-        run_experiment(i, latent_dim_factor)
-
-    # args_list = [(i, latent_dim_factor) for i, latent_dim_factor in params]
-    # with Pool(processes=max_concurrent_processes) as pool:
-    #     pool.starmap(run_experiment, args_list)
+    with Pool(processes=max_concurrent_processes) as pool:
+        pool.starmap(run_experiment, args_list)
 
 
 if __name__ == "__main__":
