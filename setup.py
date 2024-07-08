@@ -11,5 +11,6 @@ setup(
         "tensorflow",
         "torch",
         "torchmetrics",
+        "ipdb",
     ],
 )
