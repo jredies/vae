@@ -10,6 +10,9 @@ import torch.nn as nn
 
 from vae.models.training import train_vae, get_loaders
 
+import torch.nn.utils.spectral_norm as spectral_norm
+
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -27,10 +30,10 @@ class CNN_Encoder(nn.Module):
         layer3 = layers[2]
         layer4 = layers[3]
 
-        cnn1 = nn.Conv2d(layer1[0], layer1[1], **layer1[2])
-        cnn2 = nn.Conv2d(layer2[0], layer2[1], **layer2[2])
-        cnn3 = nn.Conv2d(layer3[0], layer3[1], **layer3[2])
-        cnn4 = nn.Conv2d(layer4[0], layer4[1], **layer4[2])
+        cnn1 = spectral_norm(nn.Conv2d(layer1[0], layer1[1], **layer1[2]))
+        cnn2 = spectral_norm(nn.Conv2d(layer2[0], layer2[1], **layer2[2]))
+        cnn3 = spectral_norm(nn.Conv2d(layer3[0], layer3[1], **layer3[2]))
+        cnn4 = spectral_norm(nn.Conv2d(layer4[0], layer4[1], **layer4[2]))
 
         self.convs = nn.Sequential(
             cnn1,
@@ -50,8 +53,8 @@ class CNN_Encoder(nn.Module):
         self.output_convs = self._output_convs()
         self.output_length = np.prod(self.output_convs)
 
-        self.fc_mu = nn.Linear(self.output_length, latent_dim)
-        self.fc_logvar = nn.Linear(self.output_length, latent_dim)
+        self.fc_mu = spectral_norm(nn.Linear(self.output_length, latent_dim))
+        self.fc_logvar = spectral_norm(nn.Linear(self.output_length, latent_dim))
 
     def _output_convs(self):
         print("Encoder")
@@ -79,9 +82,7 @@ class CNN_Decoder(nn.Module):
         self.output_dim = output_convs
         self.output_length = np.prod(output_convs)
 
-        self.fc = nn.Linear(
-            latent_dim, self.output_length
-        )  # Adjusted for 512 latent space
+        self.fc = spectral_norm(nn.Linear(latent_dim, self.output_length))
 
         layer1 = layers[-1]
         layer2 = layers[-2]
@@ -113,16 +114,16 @@ class CNN_Decoder(nn.Module):
         )
 
         self.dconvs = nn.Sequential(
-            self.tcnn1,
+            spectral_norm(self.tcnn1),
             nn.BatchNorm2d(i * 64),
             nn.SiLU(),
-            self.tcnn2,
+            spectral_norm(self.tcnn2),
             nn.BatchNorm2d(i * 32),
             nn.SiLU(),
-            self.tcnn3,
+            spectral_norm(self.tcnn3),
             nn.BatchNorm2d(i * 16),
             nn.SiLU(),
-            self.tcnn4,
+            spectral_norm(self.tcnn4),
         )
 
         self._output_convs()
@@ -215,13 +216,13 @@ def run_experiment(salt_and_pepper_noise: float = 0.0005):
         iw_samples=0,
         salt_and_pepper_noise=salt_and_pepper_noise,
     )
-    df_stats.to_csv(_path / f"cnn_{salt_and_pepper_noise}.csv")
+    df_stats.to_csv(_path / f"spec.csv")
 
 
 def main():
     max_concurrent_processes = 5
 
-    salt_and_pepper_noises = [0.00025, 0.0005, 0.001, 0.002, 0.0]
+    salt_and_pepper_noises = [0.0]
 
     params = list(itertools.product(salt_and_pepper_noises))
     args_list = [(salt_and_pepper_noise) for salt_and_pepper_noise in params]

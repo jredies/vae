@@ -1,3 +1,4 @@
+import pathlib
 import itertools
 import sys
 import logging
@@ -45,7 +46,11 @@ def run_experiment(salt_and_pepper_noise: float = 0.0005):
         epochs=150,
         salt_and_pepper_noise=salt_and_pepper_noise,
     )
-    df_stats.to_csv(f"{path}/reg/flat_sn_{salt_and_pepper_noise}.csv")
+    path = "outputs/reg/output"
+    _path = pathlib.Path(path)
+    _path.mkdir(parents=True, exist_ok=True)
+
+    df_stats.to_csv(f"{_path}/flat_sn_{salt_and_pepper_noise}.csv")
 
 
 sys.excepthook = exception_hook
