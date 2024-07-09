@@ -192,7 +192,9 @@ class CNN_VAE(nn.Module):
         return z
 
 
-def run_experiment(latent_noise: float = 0.0):
+def run_experiment(
+    gamma: float,
+):
     i = 5
     latent_factor = 0.2
 
@@ -206,8 +208,7 @@ def run_experiment(latent_noise: float = 0.0):
     print("Latent dim: ", latent_dim)
 
     model = CNN_VAE(latent_dim=latent_dim, i=i)
-
-    log.info(f"Latent noise: {latent_noise}")
+    log.info(f"Gamma {gamma}")
 
     df_stats = train_vae(
         vae=model,
@@ -216,27 +217,34 @@ def run_experiment(latent_noise: float = 0.0):
         test_loader=test_loader,
         dim=dim,
         epochs=300,
-        gamma=0.25,
+        gamma=gamma,
         model_path=path,
         cnn=True,
         loss_type="standard",
         iw_samples=0,
         salt_and_pepper_noise=0.0,
-        latent_noise=latent_noise,
+        # latent_noise=latent_noise,
     )
-    df_stats.to_csv(_path / f"latent_noise_{latent_noise}.csv")
+    df_stats.to_csv(_path / f"best_model_gamma_{gamma}.csv")
 
 
 def main():
-    max_concurrent_processes = 5
+    max_concurrent_processes = 6
 
-    latent_noises = [0.1, 0.05, 0.01, 0.005, 0.0]
+    gammas = [
+        1.0,
+        0.9,
+        0.75,
+        0.5,
+        0.25,
+        0.1,
+    ]
 
-    params = list(itertools.product(latent_noises))
-    args_list = [(latent_noise) for latent_noise in params]
+    params = list(itertools.product(gammas))
+    args_list = [spec for spec in params]
 
-    for args in args_list:
-        run_experiment(*args)
+    for gamma in gammas:
+        run_experiment(gamma)
 
     # with Pool(processes=max_concurrent_processes) as pool:
     #     pool.starmap(run_experiment, args_list)

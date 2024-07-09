@@ -114,6 +114,7 @@ class Encoder(nn.Module):
         dropout: float = 0.3,
         batch_norm: bool = True,
         drop_type: str = "standard",
+        spectral_norm: bool = False,
     ):
         super(Encoder, self).__init__()
         self.activation = activation
@@ -128,7 +129,10 @@ class Encoder(nn.Module):
         for i in range(n_layers - 1):
             in_dim = dimension.loc[i, "encoder_in_dim"]
             out_dim = dimension.loc[i, "encoder_out_dim"]
-            self.layers.append(nn.Linear(in_dim, out_dim))
+            lin = nn.Linear(in_dim, out_dim)
+            if spectral_norm:
+                lin = nn.utils.spectral_norm(lin)
+            self.layers.append(lin)
             if drop_type == "standard":
                 self.dropout_layers.append(nn.Dropout(dropout))
             elif drop_type == "variational":
@@ -148,6 +152,9 @@ class Encoder(nn.Module):
 
         self.fc_mu = nn.Linear(in_dim, out_dim)
         self.fc_logvar = nn.Linear(in_dim, out_dim)
+        if spectral_norm:
+            self.fc_mu = nn.utils.spectral_norm(self.fc_mu)
+            self.fc_logvar = nn.utils.spectral_norm(self.fc_logvar)
 
     def forward(self, x):
         for idx, layer in enumerate(self.layers):
@@ -171,6 +178,7 @@ class Decoder(nn.Module):
         dropout: float = 0.3,
         batch_norm: bool = True,
         drop_type: str = "standard",
+        spectral_norm: bool = False,
     ):
         super(Decoder, self).__init__()
         self.activation = activation
@@ -186,7 +194,10 @@ class Decoder(nn.Module):
         for i in range(n_layers):
             input_dim = dimension.loc[i, "decoder_in_dim"]
             output_dim = dimension.loc[i, "decoder_out_dim"]
-            self.layers.append(nn.Linear(input_dim, output_dim))
+            lin = nn.Linear(input_dim, output_dim)
+            if spectral_norm:
+                lin = nn.utils.spectral_norm(lin)
+            self.layers.append(lin)
             if i < n_layers - 1:
                 if self.batch_norm:
                     self.batch_norm_layers.append(nn.BatchNorm1d(output_dim))
@@ -226,6 +237,7 @@ class VAE(nn.Module):
         drop_type: str = "standard",
         dimensions: typing.Tuple[int, int] = (28, 28),
         batch_norm: bool = True,
+        spectral_norm: bool = False,
     ):
         super(VAE, self).__init__()
         self.geometry = geometry
@@ -247,6 +259,7 @@ class VAE(nn.Module):
             dropout=dropout,
             drop_type=drop_type,
             batch_norm=batch_norm,
+            spectral_norm=spectral_norm,
         )
         self.decoder = Decoder(
             activation=self.activation,
@@ -255,6 +268,7 @@ class VAE(nn.Module):
             dropout=dropout,
             drop_type=drop_type,
             batch_norm=batch_norm,
+            spectral_norm=spectral_norm,
         )
 
     def choose_activation(self, activation: str):
@@ -271,14 +285,18 @@ class VAE(nn.Module):
         elif activation == "SiLU":
             self.activation = nn.SiLU()
 
-    def reparameterize(self, mu, logvar):
+    def reparameterize(self, mu, logvar, noise_parameter: float = 0.0):
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
-        return mu + eps * std
+        z = mu + eps * std
+        if noise_parameter > 0.0:
+            noise = torch.randn_like(z) * noise_parameter
+            z += noise
+        return z
 
-    def forward(self, x):
+    def forward(self, x, noise_parameter: float = 0.0):
         mu, logvar = self.encoder(x)
-        z = self.reparameterize(mu, logvar)
+        z = self.reparameterize(mu, logvar, noise_parameter=noise_parameter)
         x_recon = self.decoder(z)
         return x_recon, mu, logvar
 
@@ -292,6 +310,7 @@ def create_vae_model(
     dropout: float = 0.0,
     batch_norm: bool = True,
     drop_type: str = "variational",
+    spectral_norm: bool = False,
 ) -> VAE:
     hidden_dim = int(np.prod(dim))
     latent_dim = int(np.prod(dim) * latent_dim_factor)
@@ -306,6 +325,7 @@ def create_vae_model(
         dropout=dropout,
         batch_norm=batch_norm,
         drop_type=drop_type,
+        spectral_norm=spectral_norm,
     )
 
     return model
