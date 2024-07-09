@@ -10,8 +10,6 @@ import torch.nn as nn
 
 from vae.models.training import train_vae, get_loaders
 
-import torch.nn.utils.spectral_norm as spectral_norm
-
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,7 +20,7 @@ log = logging.getLogger(__name__)
 
 
 class CNN_Encoder(nn.Module):
-    def __init__(self, latent_dim: int, layers: list, i=1):
+    def __init__(self, latent_dim: int, layers: list, i=1, spectral_norm=False):
         super(CNN_Encoder, self).__init__()
 
         layer1 = layers[0]
@@ -30,10 +28,16 @@ class CNN_Encoder(nn.Module):
         layer3 = layers[2]
         layer4 = layers[3]
 
-        cnn1 = spectral_norm(nn.Conv2d(layer1[0], layer1[1], **layer1[2]))
-        cnn2 = spectral_norm(nn.Conv2d(layer2[0], layer2[1], **layer2[2]))
-        cnn3 = spectral_norm(nn.Conv2d(layer3[0], layer3[1], **layer3[2]))
-        cnn4 = spectral_norm(nn.Conv2d(layer4[0], layer4[1], **layer4[2]))
+        cnn1 = nn.Conv2d(layer1[0], layer1[1], **layer1[2])
+        cnn2 = nn.Conv2d(layer2[0], layer2[1], **layer2[2])
+        cnn3 = nn.Conv2d(layer3[0], layer3[1], **layer3[2])
+        cnn4 = nn.Conv2d(layer4[0], layer4[1], **layer4[2])
+
+        if spectral_norm:
+            cnn1 = nn.utils.spectral_norm(cnn1)
+            cnn2 = nn.utils.spectral_norm(cnn2)
+            cnn3 = nn.utils.spectral_norm(cnn3)
+            cnn4 = nn.utils.spectral_norm(cnn4)
 
         self.convs = nn.Sequential(
             cnn1,
@@ -53,8 +57,8 @@ class CNN_Encoder(nn.Module):
         self.output_convs = self._output_convs()
         self.output_length = np.prod(self.output_convs)
 
-        self.fc_mu = spectral_norm(nn.Linear(self.output_length, latent_dim))
-        self.fc_logvar = spectral_norm(nn.Linear(self.output_length, latent_dim))
+        self.fc_mu = nn.Linear(self.output_length, latent_dim)
+        self.fc_logvar = nn.Linear(self.output_length, latent_dim)
 
     def _output_convs(self):
         print("Encoder")
@@ -76,13 +80,20 @@ class CNN_Encoder(nn.Module):
 
 
 class CNN_Decoder(nn.Module):
-    def __init__(self, latent_dim: int, output_convs: tuple, layers: list, i=1):
+    def __init__(
+        self,
+        latent_dim: int,
+        output_convs: tuple,
+        layers: list,
+        i=1,
+        spectral_norm=False,
+    ):
         super(CNN_Decoder, self).__init__()
 
         self.output_dim = output_convs
         self.output_length = np.prod(output_convs)
 
-        self.fc = spectral_norm(nn.Linear(latent_dim, self.output_length))
+        self.fc = nn.Linear(latent_dim, self.output_length)
 
         layer1 = layers[-1]
         layer2 = layers[-2]
@@ -113,17 +124,23 @@ class CNN_Decoder(nn.Module):
             output_padding=1,
         )
 
+        if spectral_norm:
+            self.tcnn1 = nn.utils.spectral_norm(self.tcnn1)
+            self.tcnn2 = nn.utils.spectral_norm(self.tcnn2)
+            self.tcnn3 = nn.utils.spectral_norm(self.tcnn3)
+            self.tcnn4 = nn.utils.spectral_norm(self.tcnn4)
+
         self.dconvs = nn.Sequential(
-            spectral_norm(self.tcnn1),
+            self.tcnn1,
             nn.BatchNorm2d(i * 64),
             nn.SiLU(),
-            spectral_norm(self.tcnn2),
+            self.tcnn2,
             nn.BatchNorm2d(i * 32),
             nn.SiLU(),
-            spectral_norm(self.tcnn3),
+            self.tcnn3,
             nn.BatchNorm2d(i * 16),
             nn.SiLU(),
-            spectral_norm(self.tcnn4),
+            self.tcnn4,
         )
 
         self._output_convs()
@@ -145,8 +162,9 @@ class CNN_Decoder(nn.Module):
 
 
 class CNN_VAE(nn.Module):
-    def __init__(self, iw_samples=0, latent_dim=50, i=1):
+    def __init__(self, iw_samples=0, latent_dim=50, i=1, spectral_norm=False):
         super(CNN_VAE, self).__init__()
+        self.spectral_norm = spectral_norm
 
         layers = [
             (1, i * 16, {"kernel_size": 3, "stride": 2, "padding": 1}),
@@ -155,13 +173,19 @@ class CNN_VAE(nn.Module):
             (i * 64, i * 128, {"kernel_size": 3, "stride": 2, "padding": 1}),
         ]
 
-        self.encoder = CNN_Encoder(latent_dim=latent_dim, layers=layers, i=i)
+        self.encoder = CNN_Encoder(
+            latent_dim=latent_dim,
+            layers=layers,
+            i=i,
+            spectral_norm=spectral_norm,
+        )
         self.output_convs = self.encoder.output_convs
         self.decoder = CNN_Decoder(
             latent_dim=latent_dim,
             output_convs=self.output_convs,
             layers=layers,
             i=i,
+            spectral_norm=spectral_norm,
         )
         self.iw_samples = iw_samples
 
@@ -193,7 +217,7 @@ class CNN_VAE(nn.Module):
 
 
 def run_experiment(
-    gamma: float,
+    latent_noise_std: float,
 ):
     i = 5
     latent_factor = 0.2
@@ -205,10 +229,9 @@ def run_experiment(
 
     length = np.prod(dim)
     latent_dim = int(length * latent_factor)
-    print("Latent dim: ", latent_dim)
 
-    model = CNN_VAE(latent_dim=latent_dim, i=i)
-    log.info(f"Gamma {gamma}")
+    model = CNN_VAE(latent_dim=latent_dim, i=i, spectral_norm=False)
+    log.info(f"Latent noise std: {latent_noise_std}")
 
     df_stats = train_vae(
         vae=model,
@@ -217,37 +240,37 @@ def run_experiment(
         test_loader=test_loader,
         dim=dim,
         epochs=300,
-        gamma=gamma,
         model_path=path,
         cnn=True,
         loss_type="standard",
         iw_samples=0,
         salt_and_pepper_noise=0.0,
-        # latent_noise=latent_noise,
+        gamma=0.1,
+        latent_noise=latent_noise_std,
     )
-    df_stats.to_csv(_path / f"best_model_gamma_{gamma}.csv")
+    df_stats.to_csv(_path / f"best_model_latent_{latent_noise_std}.csv")
 
 
 def main():
-    max_concurrent_processes = 6
+    max_concurrent_processes = 3
 
-    gammas = [
-        1.0,
-        0.9,
-        0.75,
-        0.5,
-        0.25,
-        0.1,
+    latent_noise_std = [
+        0.0,
+        0.01,
+        0.02,
+        0.03,
+        0.04,
+        0.05,
     ]
 
-    params = list(itertools.product(gammas))
-    args_list = [spec for spec in params]
+    params = list(itertools.product(latent_noise_std))
+    args_list = [lns for lns in params]
 
-    for gamma in gammas:
-        run_experiment(gamma)
+    # for spetral_norm in spectral_norms:
+    #     run_experiment(spectral_norm)
 
-    # with Pool(processes=max_concurrent_processes) as pool:
-    #     pool.starmap(run_experiment, args_list)
+    with Pool(processes=max_concurrent_processes) as pool:
+        pool.starmap(run_experiment, args_list)
 
 
 if __name__ == "__main__":

@@ -194,7 +194,7 @@ def train_vae(
     scheduler_type: str = "plateau",
     plateau_patience: int = 5,
     step_size: int = 10,
-    gamma: float = 1.0,
+    gamma: float = 0.1,
     gaussian_noise: float = 0.0,
     salt_and_pepper_noise: float = 0.0,
     latent_noise: float = 0.0,
@@ -294,6 +294,7 @@ def train_vae(
             train_recon=train_recon,
             val_loss=val_loss,
             val_recon=val_recon,
+            vae=vae,
         )
 
         early_stopping = False
@@ -438,10 +439,12 @@ def log_training_epoch(
     val_loss,
     train_recon,
     val_recon,
+    vae,
 ):
     formatted_epoch = str(epoch).zfill(3)
 
     output_string = (
+        f" SM {vae.spectral_norm} |"
         f" Epoch {formatted_epoch} |"
         f" LR {optimizer.param_groups[0]['lr']:.7f} |"
         f" Tr Loss {train_loss:.4f} |"
