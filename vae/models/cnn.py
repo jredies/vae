@@ -254,14 +254,7 @@ def run_experiment(
 def main():
     max_concurrent_processes = 3
 
-    latent_noise_std = [
-        0.0,
-        0.01,
-        0.02,
-        0.03,
-        0.04,
-        0.05,
-    ]
+    latent_noise_std = [0.0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07]
 
     params = list(itertools.product(latent_noise_std))
     args_list = [lns for lns in params]
@@ -269,8 +262,8 @@ def main():
     # for spetral_norm in spectral_norms:
     #     run_experiment(spectral_norm)
 
-    with Pool(processes=max_concurrent_processes) as pool:
-        pool.starmap(run_experiment, args_list)
+    # with Pool(processes=max_concurrent_processes) as pool:
+    #     pool.starmap(run_experiment, args_list)
 
 
 if __name__ == "__main__":
