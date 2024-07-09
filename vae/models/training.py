@@ -86,6 +86,7 @@ def training_step(
     data: typing.Any,
     gaussian_noise: float = 0.0,
     salt_and_pepper_noise: float = 0.0,
+    latent_noise: float = 0.0,
     clip_gradient: bool = False,
     norm_gradient: bool = False,
     beta: float = 1.0,
@@ -101,7 +102,8 @@ def training_step(
         data = add_salt_and_pepper_noise(data, noise_factor=salt_and_pepper_noise)
 
     optimizer.zero_grad()
-    x_recon, mu, logvar = vae(data)
+    x_recon, mu, logvar = vae.forward(x=data, noise_parameter=latent_noise)
+
     loss = loss_fn(
         x_recon=x_recon,
         x=data,
@@ -194,7 +196,8 @@ def train_vae(
     step_size: int = 10,
     gamma: float = 1.0,
     gaussian_noise: float = 0.0,
-    salt_and_pepper_noise: float = 0.0005,
+    salt_and_pepper_noise: float = 0.0,
+    latent_noise: float = 0.0,
     clip_gradient: bool = False,
     norm_gradient: bool = False,
     loss_type: str = "standard",
@@ -247,6 +250,7 @@ def train_vae(
                 data=data,
                 gaussian_noise=gaussian_noise,
                 salt_and_pepper_noise=salt_and_pepper_noise,
+                latent_noise=latent_noise,
                 norm_gradient=norm_gradient,
                 clip_gradient=clip_gradient,
                 loss_fn=loss_fn,

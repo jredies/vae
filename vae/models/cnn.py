@@ -165,27 +165,34 @@ class CNN_VAE(nn.Module):
         )
         self.iw_samples = iw_samples
 
-    def forward(self, x):
+    def forward(self, x, noise_parameter: float = 0.0):
         if self.iw_samples > 0:
             mu, logvar = self.encoder(x)
             z_samples = [
-                self.reparameterize(mu, logvar) for _ in range(self.iw_samples)
+                self.reparameterize(mu, logvar, noise_parameter=noise_parameter)
+                for _ in range(self.iw_samples)
             ]
             reconstructions = [self.decoder(z) for z in z_samples]
             return reconstructions, mu, logvar
         else:
             mu, logvar = self.encoder(x)
-            z = self.reparameterize(mu, logvar)
+            z = self.reparameterize(mu, logvar, noise_parameter=noise_parameter)
             x_recon = self.decoder(z)
             return x_recon, mu, logvar
 
-    def reparameterize(self, mu, logvar):
+    def reparameterize(self, mu, logvar, noise_parameter: float = 0.0):
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
-        return mu + eps * std
+        z = mu + eps * std
+
+        if noise_parameter > 0.0:
+            noise = torch.randn_like(z) * noise_parameter
+            z += noise
+
+        return z
 
 
-def run_experiment(salt_and_pepper_noise: float = 0.0005):
+def run_experiment(latent_noise: float = 0.0):
     i = 5
     latent_factor = 0.2
 
@@ -200,7 +207,7 @@ def run_experiment(salt_and_pepper_noise: float = 0.0005):
 
     model = CNN_VAE(latent_dim=latent_dim, i=i)
 
-    log.info(f"salt_and_pepper_noise: {salt_and_pepper_noise}")
+    log.info(f"Latent noise: {latent_noise}")
 
     df_stats = train_vae(
         vae=model,
@@ -214,18 +221,19 @@ def run_experiment(salt_and_pepper_noise: float = 0.0005):
         cnn=True,
         loss_type="standard",
         iw_samples=0,
-        salt_and_pepper_noise=salt_and_pepper_noise,
+        salt_and_pepper_noise=0.0,
+        latent_noise=latent_noise,
     )
-    df_stats.to_csv(_path / f"spec.csv")
+    df_stats.to_csv(_path / f"latent_noise_{latent_noise}.csv")
 
 
 def main():
     max_concurrent_processes = 5
 
-    salt_and_pepper_noises = [0.0]
+    latent_noises = [0.1, 0.05, 0.01, 0.005, 0.0]
 
-    params = list(itertools.product(salt_and_pepper_noises))
-    args_list = [(salt_and_pepper_noise) for salt_and_pepper_noise in params]
+    params = list(itertools.product(latent_noises))
+    args_list = [(latent_noise) for latent_noise in params]
 
     for args in args_list:
         run_experiment(*args)
