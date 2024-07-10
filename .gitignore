@@ -139,3 +139,5 @@ logs/
 *.log
 *.log.*
 *.log.[0-9]*
+
+outputs/*

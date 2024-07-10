@@ -257,14 +257,11 @@ def main():
     latent_noise_std = [
         0.0,
         # 0.01,
-        0.02,
-        # 0.03,
-        0.04,
-        # 0.05,
-        0.06,
-        # 0.07,
-        0.08,
+        0.025,
+        0.05,
+        0.1,
     ]
+    latent_noise_std = list(reversed(latent_noise_std))
 
     params = list(itertools.product(latent_noise_std))
     args_list = [lns for lns in params]
