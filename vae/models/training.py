@@ -58,11 +58,19 @@ def estimate_log_marginal(
             x = get_view(device=device, input_dim=input_dim, x=x, cnn=cnn)
             if cnn:
                 log_weights.append(
-                    iwae_loss_fast_cnn(model=model, x=x, num_samples=num_samples)
+                    iwae_loss_fast_cnn(
+                        model=model,
+                        x=x,
+                        num_samples=num_samples,
+                    )
                 )
             else:
                 log_weights.append(
-                    iwae_loss_fast(model=model, x=x, num_samples=num_samples)
+                    iwae_loss_fast(
+                        model=model,
+                        x=x,
+                        num_samples=num_samples,
+                    )
                 )
 
     return np.array([x.item() for x in log_weights]).mean()
@@ -332,28 +340,31 @@ def train_vae(
 
         lm_val, lm_train, lm_test = 0.0, 0.0, 0.0
 
-        # if (epoch % 100 == 0) or early_stopping:
-        #     lm_val = estimate_log_marginal(
-        #         model=vae,
-        #         data_loader=validation_loader,
-        #         device=device,
-        #         input_dim=input_dim,
-        #         cnn=cnn,
-        #     )
-        #     lm_train = estimate_log_marginal(
-        #         model=vae,
-        #         data_loader=train_loader,
-        #         device=device,
-        #         input_dim=input_dim,
-        #         cnn=cnn,
-        #     )
-        #     lm_test = estimate_log_marginal(
-        #         model=vae,
-        #         data_loader=test_loader,
-        #         device=device,
-        #         input_dim=input_dim,
-        #         cnn=cnn,
-        #     )
+        if ((epoch + 10) % 50 == 0) or early_stopping:
+            lm_val = estimate_log_marginal(
+                model=vae,
+                data_loader=validation_loader,
+                device=device,
+                input_dim=input_dim,
+                cnn=cnn,
+            )
+            lm_train = estimate_log_marginal(
+                model=vae,
+                data_loader=train_loader,
+                device=device,
+                input_dim=input_dim,
+                cnn=cnn,
+            )
+            lm_test = estimate_log_marginal(
+                model=vae,
+                data_loader=test_loader,
+                device=device,
+                input_dim=input_dim,
+                cnn=cnn,
+            )
+            log.info(
+                f"Log marginal likelihood: Val {lm_val:.4f} Tr {lm_train:.4f} Test {lm_test:.4f}"
+            )
 
         write_all_stats(
             writer=writer,

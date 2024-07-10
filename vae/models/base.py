@@ -40,11 +40,10 @@ def run_experiment(iw_samples):
         test_loader=test_loader,
         dim=dim,
         model_path=path,
-        gamma=0.5,
+        gamma=0.1,
         epochs=300,
-        salt_and_pepper_noise=0.0,
+        loss_type="iwae" if iw_samples > 0 else "standard",
         iw_samples=iw_samples,
-        loss_type="iwae",
     )
     path = "outputs/reg/output"
     _path = pathlib.Path(path)
@@ -57,7 +56,7 @@ sys.excepthook = exception_hook
 
 
 def main():
-    for x in reversed([2, 3, 10, 30]):
+    for x in reversed([0, 3, 10, 30]):
         run_experiment(iw_samples=x)
 
 
