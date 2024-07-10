@@ -309,7 +309,7 @@ def train_vae(
             scheduler_type=scheduler_type,
             gamma=gamma,
             scheduler=scheduler,
-            val_loss=val_selbo,
+            val_loss=val_loss,
         )
 
         log_training_epoch(
