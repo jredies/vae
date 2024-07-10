@@ -241,6 +241,7 @@ def run_experiment():
         cnn=True,
         loss_type="iwae",
         iw_samples=5,
+        gamma=0.5,
     )
     df_stats.to_csv(_path / f"iw_cnn.csv")
 
