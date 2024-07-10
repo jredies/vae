@@ -300,18 +300,6 @@ def train_vae(
             val_loss=val_selbo,
         )
 
-        early_stopping = False
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            patience_counter = 0
-        else:
-            patience_counter += 1
-        if patience_counter >= patience:
-            log.info("Early stopping triggered.")
-            early_stopping = True
-        if val_selbo < best_val_selbo:
-            best_val_selbo = val_selbo
-
         log_training_epoch(
             optimizer=optimizer,
             best_val_loss=best_val_loss,
@@ -325,6 +313,18 @@ def train_vae(
             val_selbo=val_selbo,
             vae=vae,
         )
+
+        early_stopping = False
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+        else:
+            patience_counter += 1
+        if patience_counter >= patience:
+            log.info("Early stopping triggered.")
+            early_stopping = True
+        if val_selbo < best_val_selbo:
+            best_val_selbo = val_selbo
 
         lm_val, lm_train, lm_test = 0.0, 0.0, 0.0
 
