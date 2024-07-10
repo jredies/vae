@@ -23,6 +23,13 @@ from vae.models.noise import add_gaussian_noise, add_salt_and_pepper_noise
 from vae.models.utils import select_device
 
 
+def init_weights(m):
+    if isinstance(m, nn.Linear):
+        nn.init.xavier_uniform_(m.weight)
+        if m.bias is not None:
+            nn.init.zeros_(m.bias)
+
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -204,6 +211,33 @@ def write_stats(
     df_stats.loc[epoch, label] = value
 
 
+def get_learning_rate(epoch):
+    # Define the learning rate schedule
+    initial_lr = 0.001
+    decay_factor = 10 ** (-1 / 7)
+
+    # Define the epoch boundaries for each stage
+    stage_epochs = [3**i for i in range(8)]
+    epoch_boundaries = [sum(stage_epochs[: i + 1]) for i in range(len(stage_epochs))]
+
+    # Find the current stage based on the epoch
+    stage = next(i for i, boundary in enumerate(epoch_boundaries) if epoch < boundary)
+
+    # Calculate the learning rate for the current stage
+    learning_rate = initial_lr * (decay_factor**stage)
+
+    return learning_rate
+
+
+def update_learning_rate(optimizer, epoch):
+    # Get the new learning rate based on the epoch
+    new_lr = get_learning_rate(epoch)
+
+    # Update the learning rate in the optimizer
+    for param_group in optimizer.param_groups:
+        param_group["lr"] = new_lr
+
+
 def train_vae(
     model_path: str,
     vae: nn.Module,
@@ -234,7 +268,11 @@ def train_vae(
     writer = SummaryWriter(model_path)
     df_stats = pd.DataFrame()
 
-    optimizer = optim.Adam(vae.parameters(), lr=base_learning_rate)
+    optimizer = optim.Adam(
+        vae.parameters(),
+        lr=base_learning_rate,
+        eps=1e-4,
+    )
 
     scheduler = initialize_scheduler(
         scheduler_type=scheduler_type,
@@ -258,6 +296,8 @@ def train_vae(
     best_val_loss = float("inf")
     best_val_selbo = float("inf")
     patience_counter = 0
+
+    init_weights(vae)
 
     for epoch in range(epochs):
         vae.train()
@@ -310,6 +350,8 @@ def train_vae(
             gamma=gamma,
             scheduler=scheduler,
             val_loss=val_loss,
+            epoch=epoch,
+            optimizer=optimizer,
         )
 
         log_training_epoch(
@@ -399,7 +441,11 @@ def update_scheduler(
     gamma: float,
     scheduler,
     val_loss: float,
+    epoch: int,
+    optimizer,
 ):
+    if scheduler_type == "paper":
+        update_learning_rate(optimizer, epoch)
     if gamma < 1.0:
         if scheduler_type == "plateau":
             scheduler.step(val_loss)
