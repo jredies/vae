@@ -243,13 +243,12 @@ def run_experiment(iw_samples):
         loss_type="iwae",
         iw_samples=iw_samples,
         gamma=0.5,
-        base_learning_rate=1e-3 * 2,
     )
     df_stats.to_csv(_path / f"iw_cnn_{iw_samples}.csv")
 
 
 def main():
-    for iw_samples in [2, 3, 10]:
+    for iw_samples in reversed([2, 3, 10, 30]):
         run_experiment(iw_samples=iw_samples)
 
 

@@ -115,9 +115,9 @@ def training_step(
         cnn=cnn,
     ).to(device)
     recon = reconstruction_loss(x_recon=x_recon, x=data).to(device)
-    standard_elbo = standard_loss(x_recon=x_recon, x=data, mu=mu, logvar=logvar).to(
-        device
-    )
+    standard_elbo = standard_loss(
+        x_recon=x_recon, x=data, mu=mu, logvar=logvar, cnn=cnn
+    ).to(device)
     loss.backward()
 
     train_loss += loss.item()
@@ -165,9 +165,13 @@ def calculate_stats(
                 cnn=cnn,
             ).to(device)
             recon = reconstruction_loss(x_recon=x_recon, x=data).to(device)
-            selbo = standard_loss(x_recon=x_recon, x=data, mu=mu, logvar=logvar).to(
-                device
-            )
+            selbo = standard_loss(
+                x_recon=x_recon,
+                x=data,
+                mu=mu,
+                logvar=logvar,
+                cnn=cnn,
+            ).to(device)
 
             ret_loss += loss.item()
             ret_recon += recon.item()
@@ -358,12 +362,15 @@ def train_vae(
             train_loss=train_loss,
             train_lm=lm_train,
             train_recon=train_recon,
+            train_selbo=train_selbo,
             val_loss=val_loss,
             val_lm=lm_val,
             val_recon=val_recon,
+            val_selbo=val_selbo,
             test_loss=test_loss,
             test_lm=lm_test,
             test_recon=test_recon,
+            test_selbo=test_selbo,
             best_val_loss=best_val_loss,
         )
 
@@ -430,12 +437,15 @@ def write_all_stats(
     train_loss: float,
     train_lm: float,
     train_recon: float,
+    train_selbo: float,
     val_loss: float,
     val_lm: float,
     val_recon: float,
+    val_selbo: float,
     test_loss: float,
     test_lm: float,
     test_recon: float,
+    test_selbo: float,
     best_val_loss: float,
 ):
     write_stats("train_loss", train_loss, epoch, writer, df_stats)
@@ -449,6 +459,10 @@ def write_all_stats(
     write_stats("train_recon", train_recon, epoch, writer, df_stats)
     write_stats("val_recon", val_recon, epoch, writer, df_stats)
     write_stats("test_recon", test_recon, epoch, writer, df_stats)
+
+    write_stats("train_selbo", train_selbo, epoch, writer, df_stats)
+    write_stats("val_selbo", val_selbo, epoch, writer, df_stats)
+    write_stats("test_selbo", test_selbo, epoch, writer, df_stats)
 
     write_stats(
         "best_val_loss-val_loss", best_val_loss - val_loss, epoch, writer, df_stats
