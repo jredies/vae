@@ -216,7 +216,7 @@ class CNN_VAE(nn.Module):
         return z
 
 
-def run_experiment():
+def run_experiment(iw_samples):
     i = 5
     latent_factor = 0.2
 
@@ -229,6 +229,7 @@ def run_experiment():
     latent_dim = int(length * latent_factor)
 
     model = CNN_VAE(latent_dim=latent_dim, i=i, spectral_norm=False)
+    log.info(f"Running iw_samples: {iw_samples}")
 
     df_stats = train_vae(
         vae=model,
@@ -240,14 +241,16 @@ def run_experiment():
         model_path=path,
         cnn=True,
         loss_type="iwae",
-        iw_samples=5,
+        iw_samples=iw_samples,
         gamma=0.5,
+        base_learning_rate=1e-2,
     )
-    df_stats.to_csv(_path / f"iw_cnn.csv")
+    df_stats.to_csv(_path / f"iw_cnn_{iw_samples}.csv")
 
 
 def main():
-    run_experiment()
+    for iw_samples in [2, 3, 10]:
+        run_experiment(iw_samples=iw_samples)
 
 
 if __name__ == "__main__":
