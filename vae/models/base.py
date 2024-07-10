@@ -56,7 +56,7 @@ sys.excepthook = exception_hook
 
 
 def main():
-    for x in reversed([0, 3, 10, 30]):
+    for x in list([0, 3, 10]):
         run_experiment(iw_samples=x)
 
 

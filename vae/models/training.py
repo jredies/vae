@@ -340,7 +340,9 @@ def train_vae(
 
         lm_val, lm_train, lm_test = 0.0, 0.0, 0.0
 
-        if ((epoch + 10) % 50 == 0) or early_stopping:
+        epoch_mod = epoch % 20 == 0
+
+        if early_stopping or epoch_mod:
             lm_val = estimate_log_marginal(
                 model=vae,
                 data_loader=validation_loader,
