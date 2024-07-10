@@ -465,9 +465,9 @@ def write_all_stats(
     write_stats("val_loss", val_loss, epoch, writer, df_stats)
     write_stats("test_loss", test_loss, epoch, writer, df_stats)
 
-    # write_stats("train_lm", train_lm, epoch, writer, df_stats)
-    # write_stats("val_lm", val_lm, epoch, writer, df_stats)
-    # write_stats("test_lm", test_lm, epoch, writer, df_stats)
+    write_stats("train_lm", train_lm, epoch, writer, df_stats)
+    write_stats("val_lm", val_lm, epoch, writer, df_stats)
+    write_stats("test_lm", test_lm, epoch, writer, df_stats)
 
     write_stats("train_recon", train_recon, epoch, writer, df_stats)
     write_stats("val_recon", val_recon, epoch, writer, df_stats)
