@@ -51,6 +51,7 @@ def run_experiment(iw_samples):
         iw_samples=iw_samples,
         scheduler_type="paper",
         epochs=3000,
+        patience=3000,
     )
 
 
