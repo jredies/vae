@@ -83,6 +83,7 @@ def training_step(
     optimizer: torch.optim.Optimizer,
     train_loss: float,
     train_recon: float,
+    train_selbo: float,
     data: typing.Any,
     gaussian_noise: float = 0.0,
     salt_and_pepper_noise: float = 0.0,
@@ -114,10 +115,14 @@ def training_step(
         cnn=cnn,
     ).to(device)
     recon = reconstruction_loss(x_recon=x_recon, x=data).to(device)
+    standard_elbo = standard_loss(x_recon=x_recon, x=data, mu=mu, logvar=logvar).to(
+        device
+    )
     loss.backward()
 
     train_loss += loss.item()
     train_recon += recon.item()
+    train_selbo += standard_elbo.item()
 
     if clip_gradient:
         torch.nn.utils.clip_grad_norm_(vae.parameters(), max_norm=1.0)
@@ -132,7 +137,7 @@ def training_step(
 
     optimizer.step()
 
-    return train_loss, train_recon
+    return train_loss, train_recon, train_selbo
 
 
 def calculate_stats(
@@ -143,7 +148,7 @@ def calculate_stats(
     loss_fn: typing.Callable = standard_loss,
     cnn=False,
 ) -> typing.Tuple[float, float]:
-    ret_loss, ret_recon = 0.0, 0.0
+    ret_loss, ret_recon, ret_selbo = 0.0, 0.0, 0.0
 
     mini_batches = 0
 
@@ -160,14 +165,20 @@ def calculate_stats(
                 cnn=cnn,
             ).to(device)
             recon = reconstruction_loss(x_recon=x_recon, x=data).to(device)
+            selbo = standard_loss(x_recon=x_recon, x=data, mu=mu, logvar=logvar).to(
+                device
+            )
+
             ret_loss += loss.item()
             ret_recon += recon.item()
+            ret_selbo += selbo.item()
             mini_batches += 1
 
     ret_loss = ret_loss / mini_batches
     ret_recon = ret_recon / mini_batches
+    ret_selbo = ret_selbo / mini_batches
 
-    return ret_loss, ret_recon
+    return ret_loss, ret_recon, ret_selbo
 
 
 def write_stats(
@@ -190,7 +201,7 @@ def train_vae(
     dim: np.ndarray,
     base_learning_rate: float = 1e-3,
     patience: int = 10,
-    epochs: int = 200,
+    epochs: int = 300,
     scheduler_type: str = "plateau",
     plateau_patience: int = 5,
     step_size: int = 10,
@@ -226,9 +237,9 @@ def train_vae(
         loss_fn = standard_loss
     elif loss_type == "iwae":
         if cnn:
-            loss_fn = functools.partial(iwae_loss_fast, num_samples=iw_samples)
-        else:
             loss_fn = functools.partial(iwae_loss_fast_cnn, num_samples=iw_samples)
+        else:
+            loss_fn = functools.partial(iwae_loss_fast, num_samples=iw_samples)
     else:
         raise ValueError(f"Unknown loss type: {loss_type}")
 
@@ -237,16 +248,17 @@ def train_vae(
 
     for epoch in range(epochs):
         vae.train()
-        train_loss, train_recon, mini_batches = 0.0, 0.0, 0
+        train_loss, train_recon, train_selbo, mini_batches = 0.0, 0.0, 0.0, 0
 
         for _, (data, _) in enumerate(train_loader):
-            train_loss, train_recon = training_step(
+            train_loss, train_recon, train_selbo = training_step(
                 input_dim=input_dim,
                 device=device,
                 vae=vae,
                 optimizer=optimizer,
                 train_loss=train_loss,
                 train_recon=train_recon,
+                train_selbo=train_selbo,
                 data=data,
                 gaussian_noise=gaussian_noise,
                 salt_and_pepper_noise=salt_and_pepper_noise,
@@ -260,9 +272,10 @@ def train_vae(
 
         train_loss /= mini_batches
         train_recon /= mini_batches
+        train_selbo /= mini_batches
 
         vae.eval()
-        val_loss, val_recon = calculate_stats(
+        val_loss, val_recon, val_selbo = calculate_stats(
             vae=vae,
             loader=validation_loader,
             device=device,
@@ -270,7 +283,7 @@ def train_vae(
             loss_fn=loss_fn,
             cnn=cnn,
         )
-        test_loss, test_recon = calculate_stats(
+        test_loss, test_recon, test_selbo = calculate_stats(
             vae=vae,
             loader=test_loader,
             device=device,
@@ -292,8 +305,10 @@ def train_vae(
             epoch=epoch,
             train_loss=train_loss,
             train_recon=train_recon,
+            train_selbo=train_selbo,
             val_loss=val_loss,
             val_recon=val_recon,
+            val_selbo=val_selbo,
             vae=vae,
         )
 
@@ -438,21 +453,25 @@ def log_training_epoch(
     train_loss,
     val_loss,
     train_recon,
+    train_selbo,
     val_recon,
+    val_selbo,
     vae,
 ):
     formatted_epoch = str(epoch).zfill(3)
 
     output_string = (
-        f" SM {vae.spectral_norm} |"
+        # f" SM {vae.spectral_norm} |"
         f" Epoch {formatted_epoch} |"
         f" LR {optimizer.param_groups[0]['lr']:.7f} |"
         f" Tr Loss {train_loss:.4f} |"
         # f" Tr LM {train_lm:.4f} |"
         f" Tr Recon {train_recon:.6f} |"
+        f" Tr SELBO {train_selbo:.6f} |"
         f" Val Loss {val_loss:.4f} |"
         # f" Val LM {val_lm:.4f} |"
         f" Val Recon {val_recon:.6f} |"
+        f" Val SELBO {val_selbo:.6f} |"
     )
     if epoch >= 1:
         diff_val = val_loss - best_val_loss

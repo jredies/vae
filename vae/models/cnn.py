@@ -216,9 +216,7 @@ class CNN_VAE(nn.Module):
         return z
 
 
-def run_experiment(
-    latent_noise_std: float,
-):
+def run_experiment():
     i = 5
     latent_factor = 0.2
 
@@ -231,7 +229,6 @@ def run_experiment(
     latent_dim = int(length * latent_factor)
 
     model = CNN_VAE(latent_dim=latent_dim, i=i, spectral_norm=False)
-    log.info(f"Latent noise std: {latent_noise_std}")
 
     df_stats = train_vae(
         vae=model,
@@ -242,35 +239,14 @@ def run_experiment(
         epochs=300,
         model_path=path,
         cnn=True,
-        loss_type="standard",
-        iw_samples=0,
-        salt_and_pepper_noise=0.0,
-        gamma=0.1,
-        latent_noise=latent_noise_std,
+        loss_type="iwae",
+        iw_samples=5,
     )
-    df_stats.to_csv(_path / f"best_model_latent_{latent_noise_std}.csv")
+    df_stats.to_csv(_path / f"iw_cnn.csv")
 
 
 def main():
-    max_concurrent_processes = 2
-
-    latent_noise_std = [
-        0.0,
-        # 0.01,
-        0.025,
-        0.05,
-        0.1,
-    ]
-    latent_noise_std = list(reversed(latent_noise_std))
-
-    params = list(itertools.product(latent_noise_std))
-    args_list = [lns for lns in params]
-
-    for latent_noise in latent_noise_std:
-        run_experiment(latent_noise_std=latent_noise)
-
-    # with Pool(processes=max_concurrent_processes) as pool:
-    # pool.starmap(run_experiment, args_list)
+    run_experiment()
 
 
 if __name__ == "__main__":
