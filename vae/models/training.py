@@ -244,6 +244,7 @@ def train_vae(
         raise ValueError(f"Unknown loss type: {loss_type}")
 
     best_val_loss = float("inf")
+    best_val_selbo = float("inf")
     patience_counter = 0
 
     for epoch in range(epochs):
@@ -296,20 +297,7 @@ def train_vae(
             scheduler_type=scheduler_type,
             gamma=gamma,
             scheduler=scheduler,
-            val_loss=val_loss,
-        )
-
-        log_training_epoch(
-            optimizer=optimizer,
-            best_val_loss=best_val_loss,
-            epoch=epoch,
-            train_loss=train_loss,
-            train_recon=train_recon,
-            train_selbo=train_selbo,
-            val_loss=val_loss,
-            val_recon=val_recon,
-            val_selbo=val_selbo,
-            vae=vae,
+            val_loss=val_selbo,
         )
 
         early_stopping = False
@@ -321,6 +309,22 @@ def train_vae(
         if patience_counter >= patience:
             log.info("Early stopping triggered.")
             early_stopping = True
+        if val_selbo < best_val_selbo:
+            best_val_selbo = val_selbo
+
+        log_training_epoch(
+            optimizer=optimizer,
+            best_val_loss=best_val_loss,
+            best_val_selbo=best_val_selbo,
+            epoch=epoch,
+            train_loss=train_loss,
+            train_recon=train_recon,
+            train_selbo=train_selbo,
+            val_loss=val_loss,
+            val_recon=val_recon,
+            val_selbo=val_selbo,
+            vae=vae,
+        )
 
         lm_val, lm_train, lm_test = 0.0, 0.0, 0.0
 
@@ -370,7 +374,12 @@ def train_vae(
     return df_stats
 
 
-def update_scheduler(scheduler_type: str, gamma: float, scheduler, val_loss: float):
+def update_scheduler(
+    scheduler_type: str,
+    gamma: float,
+    scheduler,
+    val_loss: float,
+):
     if gamma < 1.0:
         if scheduler_type == "plateau":
             scheduler.step(val_loss)
@@ -449,6 +458,7 @@ def write_all_stats(
 def log_training_epoch(
     optimizer,
     best_val_loss,
+    best_val_selbo,
     epoch,
     train_loss,
     val_loss,
@@ -475,7 +485,10 @@ def log_training_epoch(
     )
     if epoch >= 1:
         diff_val = val_loss - best_val_loss
-        output_string += f" Val now - best {diff_val:.6f}"
+        output_string += f" Val now - best {diff_val:.6f} |"
+
+        diff_val_selbo = val_selbo - best_val_selbo
+        output_string += f" Val SELBO now - best {diff_val_selbo:.6f}"
 
     log.info(output_string)
 
