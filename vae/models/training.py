@@ -240,6 +240,7 @@ def update_learning_rate(optimizer, epoch):
 
 def train_vae(
     model_path: str,
+    file_name: str,
     vae: nn.Module,
     train_loader: DataLoader,
     validation_loader: DataLoader,
@@ -428,6 +429,9 @@ def train_vae(
             test_selbo=test_selbo,
             best_val_loss=best_val_loss,
         )
+
+        if epoch % 20 == 0:
+            df_stats.to_csv(pathlib.Path(model_path) / f"{file_name}.csv")
 
         if early_stopping:
             break

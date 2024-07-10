@@ -17,8 +17,6 @@ log = logging.getLogger(__name__)
 
 
 def run_experiment(iw_samples):
-    path = "logs/aug"
-
     n_layers = 4
     geometry = "flat"
     latent_dim_factor = 0.2
@@ -35,24 +33,25 @@ def run_experiment(iw_samples):
     )
     log.info(f"Running iw_samples: {iw_samples}")
 
-    df_stats = train_vae(
+    path = "outputs/reg/output"
+    _path = pathlib.Path(path)
+    _path.mkdir(parents=True, exist_ok=True)
+    file_name = f"iw_base_{iw_samples}_long_learn.csv"
+
+    _ = train_vae(
         vae=vae,
         train_loader=train_loader,
         validation_loader=validation_loader,
         test_loader=test_loader,
         dim=dim,
         model_path=path,
+        file_name=file_name,
         gamma=1.0,
         loss_type="iwae" if iw_samples > 0 else "standard",
         iw_samples=iw_samples,
         scheduler_type="paper",
         epochs=3000,
     )
-    path = "outputs/reg/output"
-    _path = pathlib.Path(path)
-    _path.mkdir(parents=True, exist_ok=True)
-
-    df_stats.to_csv(_path / f"iw_base_{iw_samples}_long_learn.csv")
 
 
 sys.excepthook = exception_hook
