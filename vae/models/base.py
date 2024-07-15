@@ -45,7 +45,7 @@ def run_experiment(iw_samples, path):
         test_loader=test_loader,
         dim=dim,
         model_path=path,
-        file_name=model_name + ".csv",
+        file_name=model_name,
         loss_type="iwae" if iw_samples > 0 else "standard",
         iw_samples=iw_samples,
         gamma=0.25,
