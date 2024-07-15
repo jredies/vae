@@ -616,14 +616,14 @@ def log_training_epoch(
         f" Epoch {formatted_epoch} |"
         f" Beta {beta:.2f} |"
         f" LR {optimizer.param_groups[0]['lr']:.7f} |"
-        f" Tr Loss {train_loss:.4f} |"
+        f" Tr Loss {train_loss:.2f} |"
         # f" Tr LM {train_lm:.4f} |"
-        f" Tr Recon {train_recon:.6f} |"
-        f" Tr SELBO {train_selbo:.6f} |"
-        f" Val Loss {val_loss:.4f} |"
+        f" Tr Recon {train_recon:.2f} |"
+        f" Tr SELBO {train_selbo:.2f} |"
+        f" Val Loss {val_loss:.2f} |"
         # f" Val LM {val_lm:.4f} |"
-        f" Val Recon {val_recon:.6f} |"
-        f" Val SELBO {val_selbo:.6f} |"
+        f" Val Recon {val_recon:.2f} |"
+        f" Val SELBO {val_selbo:.2f} |"
     )
     if epoch >= 1:
         diff_val = val_loss - best_val_loss
