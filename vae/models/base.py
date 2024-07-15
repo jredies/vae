@@ -67,19 +67,12 @@ def google_stuff() -> pathlib.Path:
         from google.colab import drive
 
         log.info("Running on Google Colab.")
-
-        drive.flush_and_unmount()
-        time.sleep(5)
-
-        drive.mount("/content/drive")
         save_path = "/content/drive/My Drive/thesis/data/"
         pathlib.Path(save_path).mkdir(parents=True, exist_ok=True)
-
         return pathlib.Path(save_path)
 
     except ImportError:
         log.info("Not running on Google Colab.")
-
         path = "/Users/joachim/Library/Mobile Documents/com~apple~CloudDocs/thesis/data"
         pathlib.Path(path).mkdir(parents=True, exist_ok=True)
 
