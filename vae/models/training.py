@@ -56,7 +56,7 @@ def estimate_log_marginal(
     data_loader,
     device,
     input_dim: int,
-    num_samples=5000,
+    num_samples=250,
     cnn=False,
 ) -> float:
     log_weights = []
@@ -415,7 +415,7 @@ def train_vae(
 
         lm_val, lm_train, lm_test = 0.0, 0.0, 0.0
 
-        epoch_mod = epoch % 40 == 0
+        epoch_mod = epoch % 50 == 0
 
         if early_stopping or epoch_mod:
             lm_val = estimate_log_marginal(
