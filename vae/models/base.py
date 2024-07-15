@@ -21,9 +21,7 @@ def run_experiment(iw_samples):
     geometry = "flat"
     latent_dim_factor = 0.2
 
-    train_loader, validation_loader, test_loader, dim = get_loaders(
-        # batch_size=20,
-    )
+    train_loader, validation_loader, test_loader, dim = get_loaders()
 
     vae = create_vae_model(
         dim=dim,
@@ -36,9 +34,9 @@ def run_experiment(iw_samples):
     path = "outputs/reg/output"
     _path = pathlib.Path(path)
     _path.mkdir(parents=True, exist_ok=True)
-    file_name = f"iw_base_{iw_samples}_long_learn.csv"
+    file_name = f"big_k_{iw_samples}.csv"
 
-    _ = train_vae(
+    df_stats = train_vae(
         vae=vae,
         train_loader=train_loader,
         validation_loader=validation_loader,
@@ -46,12 +44,13 @@ def run_experiment(iw_samples):
         dim=dim,
         model_path=path,
         file_name=file_name,
-        gamma=1.0,
         loss_type="iwae" if iw_samples > 0 else "standard",
         iw_samples=iw_samples,
-        scheduler_type="paper",
-        epochs=3000,
-        patience=3000,
+        gamma=0.25,
+        plateau_patience=7,
+        patience=15,
+        epochs=300,
+        scheduler_type="plateau",
     )
 
 
@@ -59,7 +58,13 @@ sys.excepthook = exception_hook
 
 
 def main():
-    for x in list([0, 3, 10]):
+    for x in list(
+        [
+            0,
+            3,
+            10,
+        ]
+    ):
         run_experiment(iw_samples=x)
 
 

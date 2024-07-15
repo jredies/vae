@@ -56,7 +56,7 @@ def estimate_log_marginal(
     data_loader,
     device,
     input_dim: int,
-    num_samples=10,
+    num_samples=5000,
     cnn=False,
 ) -> float:
     log_weights = []
@@ -229,13 +229,25 @@ def get_learning_rate(epoch):
     return learning_rate
 
 
-def update_learning_rate(optimizer, epoch):
+def update_learning_rate(optimizer, epoch, annealing_start, annealing_end):
     # Get the new learning rate based on the epoch
-    new_lr = get_learning_rate(epoch)
+    if epoch < annealing_start:
+        new_lr = get_learning_rate(epoch)
+    elif epoch <= annealing_end:
+        new_lr = get_learning_rate(epoch - annealing_start)
+    elif epoch >= annealing_end:
+        new_lr = get_learning_rate(epoch - annealing_end)
+    else:
+        raise ValueError("Epoch out of bounds")
 
     # Update the learning rate in the optimizer
     for param_group in optimizer.param_groups:
         param_group["lr"] = new_lr
+
+
+def set_learning_rate(optimizer, lr):
+    for param_group in optimizer.param_groups:
+        param_group["lr"] = lr
 
 
 def train_vae(
@@ -261,6 +273,9 @@ def train_vae(
     loss_type: str = "standard",
     iw_samples: int = 5,
     cnn: bool = False,
+    annealing_start: int = 0,
+    annealing_end: int = 0,
+    annealing_type: str = "linear",
 ):
     device = select_device()
     vae = vae.to(device)
@@ -303,6 +318,12 @@ def train_vae(
     for epoch in range(epochs):
         vae.train()
         train_loss, train_recon, train_selbo, mini_batches = 0.0, 0.0, 0.0, 0
+        beta = calculate_beta(
+            annealing_start=annealing_start,
+            annealing_end=annealing_end,
+            annealing_type=annealing_type,
+            epoch=epoch,
+        )
 
         for _, (data, _) in enumerate(train_loader):
             train_loss, train_recon, train_selbo = training_step(
@@ -321,6 +342,7 @@ def train_vae(
                 clip_gradient=clip_gradient,
                 loss_fn=loss_fn,
                 cnn=cnn,
+                beta=beta,
             )
             mini_batches += 1
 
@@ -346,14 +368,20 @@ def train_vae(
             cnn=cnn,
         )
 
-        update_scheduler(
-            scheduler_type=scheduler_type,
-            gamma=gamma,
-            scheduler=scheduler,
-            val_loss=val_loss,
-            epoch=epoch,
-            optimizer=optimizer,
-        )
+        # if (epoch == annealing_start) or (epoch == annealing_end):
+        #     set_learning_rate(optimizer, lr=base_learning_rate)
+
+        if True:
+            update_scheduler(
+                scheduler_type=scheduler_type,
+                gamma=gamma,
+                scheduler=scheduler,
+                val_loss=val_loss,
+                epoch=epoch,
+                optimizer=optimizer,
+                annealing_start=annealing_start,
+                annealing_end=annealing_end,
+            )
 
         log_training_epoch(
             optimizer=optimizer,
@@ -367,14 +395,18 @@ def train_vae(
             val_recon=val_recon,
             val_selbo=val_selbo,
             vae=vae,
+            beta=beta,
         )
 
         early_stopping = False
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
+        elif epoch < annealing_end:
+            patience_counter = 0
         else:
             patience_counter += 1
+
         if patience_counter >= patience:
             log.info("Early stopping triggered.")
             early_stopping = True
@@ -383,7 +415,7 @@ def train_vae(
 
         lm_val, lm_train, lm_test = 0.0, 0.0, 0.0
 
-        epoch_mod = epoch % 20 == 0
+        epoch_mod = epoch % 40 == 0
 
         if early_stopping or epoch_mod:
             lm_val = estimate_log_marginal(
@@ -428,6 +460,7 @@ def train_vae(
             test_recon=test_recon,
             test_selbo=test_selbo,
             best_val_loss=best_val_loss,
+            beta=beta,
         )
 
         if epoch % 20 == 0:
@@ -440,6 +473,29 @@ def train_vae(
     return df_stats
 
 
+def calculate_beta(
+    epoch: int,
+    annealing_start: int,
+    annealing_end: int,
+    annealing_type: str,
+) -> float:
+    if annealing_start == 0 and annealing_end == 0:
+        return 1.0
+    elif (epoch >= annealing_start) and (epoch <= annealing_end):
+        if annealing_type == "linear":
+            beta = (epoch - annealing_start) / (annealing_end - annealing_start)
+        elif annealing_type == "step":
+            beta = 0.0
+    elif epoch < annealing_start:
+        beta = 0.0
+    else:
+        beta = 1.0
+
+    beta = max(beta, 0.05)
+
+    return beta
+
+
 def update_scheduler(
     scheduler_type: str,
     gamma: float,
@@ -447,9 +503,11 @@ def update_scheduler(
     val_loss: float,
     epoch: int,
     optimizer,
+    annealing_start: int,
+    annealing_end: int,
 ):
     if scheduler_type == "paper":
-        update_learning_rate(optimizer, epoch)
+        update_learning_rate(optimizer, epoch, annealing_start, annealing_end)
     if gamma < 1.0:
         if scheduler_type == "plateau":
             scheduler.step(val_loss)
@@ -510,26 +568,28 @@ def write_all_stats(
     test_recon: float,
     test_selbo: float,
     best_val_loss: float,
+    beta: float,
 ):
-    write_stats("train_loss", train_loss, epoch, writer, df_stats)
-    write_stats("val_loss", val_loss, epoch, writer, df_stats)
-    write_stats("test_loss", test_loss, epoch, writer, df_stats)
+    kwargs = {"epoch": epoch, "writer": writer, "df_stats": df_stats}
 
-    write_stats("train_lm", train_lm, epoch, writer, df_stats)
-    write_stats("val_lm", val_lm, epoch, writer, df_stats)
-    write_stats("test_lm", test_lm, epoch, writer, df_stats)
+    write_stats("train_loss", train_loss, **kwargs)
+    write_stats("val_loss", val_loss, **kwargs)
+    write_stats("test_loss", test_loss, **kwargs)
 
-    write_stats("train_recon", train_recon, epoch, writer, df_stats)
-    write_stats("val_recon", val_recon, epoch, writer, df_stats)
-    write_stats("test_recon", test_recon, epoch, writer, df_stats)
+    write_stats("train_lm", train_lm, **kwargs)
+    write_stats("val_lm", val_lm, **kwargs)
+    write_stats("test_lm", test_lm, **kwargs)
 
-    write_stats("train_selbo", train_selbo, epoch, writer, df_stats)
-    write_stats("val_selbo", val_selbo, epoch, writer, df_stats)
-    write_stats("test_selbo", test_selbo, epoch, writer, df_stats)
+    write_stats("train_recon", train_recon, **kwargs)
+    write_stats("val_recon", val_recon, **kwargs)
+    write_stats("test_recon", test_recon, **kwargs)
 
-    write_stats(
-        "best_val_loss-val_loss", best_val_loss - val_loss, epoch, writer, df_stats
-    )
+    write_stats("train_selbo", train_selbo, **kwargs)
+    write_stats("val_selbo", val_selbo, **kwargs)
+    write_stats("test_selbo", test_selbo, **kwargs)
+
+    write_stats("best_val_loss-val_loss", best_val_loss - val_loss, **kwargs)
+    write_stats("beta", beta, **kwargs)
 
 
 def log_training_epoch(
@@ -544,12 +604,14 @@ def log_training_epoch(
     val_recon,
     val_selbo,
     vae,
+    beta,
 ):
     formatted_epoch = str(epoch).zfill(3)
 
     output_string = (
         # f" SM {vae.spectral_norm} |"
         f" Epoch {formatted_epoch} |"
+        f" Beta {beta:.2f} |"
         f" LR {optimizer.param_groups[0]['lr']:.7f} |"
         f" Tr Loss {train_loss:.4f} |"
         # f" Tr LM {train_lm:.4f} |"
@@ -562,10 +624,10 @@ def log_training_epoch(
     )
     if epoch >= 1:
         diff_val = val_loss - best_val_loss
-        output_string += f" Val now - best {diff_val:.6f} |"
+        # output_string += f" Val now - best {diff_val:.6f} |"
 
         diff_val_selbo = val_selbo - best_val_selbo
-        output_string += f" Val SELBO now - best {diff_val_selbo:.6f}"
+        # output_string += f" Val SELBO now - best {diff_val_selbo:.6f}"
 
     log.info(output_string)
 
