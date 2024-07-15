@@ -1,8 +1,11 @@
+import os
 import pathlib
 import itertools
 import sys
 import logging
 from multiprocessing import Pool
+
+import torch
 
 from vae.models.simple_vae import create_vae_model
 from vae.models.training import train_vae, get_loaders
@@ -16,7 +19,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-def run_experiment(iw_samples):
+def run_experiment(iw_samples, path):
     n_layers = 4
     geometry = "flat"
     latent_dim_factor = 0.2
@@ -29,35 +32,60 @@ def run_experiment(iw_samples):
         geometry=geometry,
         latent_dim_factor=latent_dim_factor,
     )
-    log.info(f"Running iw_samples: {iw_samples}")
+    log.info(f"Running iw_samples: {iw_samples}.")
+    log.info(f"Save model as {path}.")
 
-    path = "outputs/reg/output"
-    _path = pathlib.Path(path)
-    _path.mkdir(parents=True, exist_ok=True)
-    file_name = f"big_k_{iw_samples}.csv"
+    model_name = f"iwae_{iw_samples}_plog_k_500"
 
-    df_stats = train_vae(
+    train_vae(
         vae=vae,
         train_loader=train_loader,
         validation_loader=validation_loader,
         test_loader=test_loader,
         dim=dim,
         model_path=path,
-        file_name=file_name,
+        file_name=model_name + ".csv",
         loss_type="iwae" if iw_samples > 0 else "standard",
         iw_samples=iw_samples,
         gamma=0.25,
         plateau_patience=7,
         patience=15,
-        epochs=300,
+        epochs=400,
         scheduler_type="plateau",
     )
+
+    model_save_path = path / (model_name + ".pth")
+    torch.save(vae.state_dict(), model_save_path)
 
 
 sys.excepthook = exception_hook
 
 
+def google_stuff() -> pathlib.Path:
+    try:
+        from google.colab import drive
+
+        log.info("Running on Google Colab.")
+
+        drive.mount("/content/drive")
+        save_path = "/content/drive/My Drive/thesis/data/"
+        pathlib.Path(save_path).mkdir(parents=True, exist_ok=True)
+
+        return pathlib.Path(save_path)
+
+    except ImportError:
+        log.info("Not running on Google Colab.")
+
+        path = "/Users/joachim/Library/Mobile Documents/com~apple~CloudDocs/thesis/data"
+        pathlib.Path(path).mkdir(parents=True, exist_ok=True)
+
+        return pathlib.Path(path)
+
+
 def main():
+
+    path = google_stuff()
+
     for x in list(
         [
             0,
@@ -65,7 +93,7 @@ def main():
             10,
         ]
     ):
-        run_experiment(iw_samples=x)
+        run_experiment(iw_samples=x, path=path)
 
 
 if __name__ == "__main__":

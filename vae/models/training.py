@@ -56,7 +56,7 @@ def estimate_log_marginal(
     data_loader,
     device,
     input_dim: int,
-    num_samples=250,
+    num_samples=500,
     cnn=False,
 ) -> float:
     log_weights = []
@@ -298,16 +298,7 @@ def train_vae(
         optimizer=optimizer,
     )
 
-    loss_fn = standard_loss
-    if loss_type == "standard":
-        loss_fn = standard_loss
-    elif loss_type == "iwae":
-        if cnn:
-            loss_fn = functools.partial(iwae_loss_fast_cnn, num_samples=iw_samples)
-        else:
-            loss_fn = functools.partial(iwae_loss_fast, num_samples=iw_samples)
-    else:
-        raise ValueError(f"Unknown loss type: {loss_type}")
+    loss_fn = set_loss(loss_type, iw_samples, cnn)
 
     best_val_loss = float("inf")
     best_val_selbo = float("inf")
@@ -463,14 +454,26 @@ def train_vae(
             beta=beta,
         )
 
-        if epoch % 20 == 0:
+        if (epoch % 20 == 0) or early_stopping:
             df_stats.to_csv(pathlib.Path(model_path) / f"{file_name}.csv")
 
         if early_stopping:
             break
 
     writer.close()
-    return df_stats
+
+
+def set_loss(loss_type, iw_samples, cnn):
+    if loss_type == "standard":
+        loss_fn = standard_loss
+    elif loss_type == "iwae":
+        if cnn:
+            loss_fn = functools.partial(iwae_loss_fast_cnn, num_samples=iw_samples)
+        else:
+            loss_fn = functools.partial(iwae_loss_fast, num_samples=iw_samples)
+    else:
+        raise ValueError(f"Unknown loss type: {loss_type}")
+    return loss_fn
 
 
 def calculate_beta(
