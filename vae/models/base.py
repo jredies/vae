@@ -1,3 +1,4 @@
+import time
 import os
 import pathlib
 import itertools
@@ -66,6 +67,9 @@ def google_stuff() -> pathlib.Path:
         from google.colab import drive
 
         log.info("Running on Google Colab.")
+
+        drive.flush_and_unmount()
+        time.sleep(5)
 
         drive.mount("/content/drive")
         save_path = "/content/drive/My Drive/thesis/data/"
