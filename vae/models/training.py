@@ -627,7 +627,7 @@ def log_training_epoch(
     )
     if epoch >= 1:
         diff_val = val_loss - best_val_loss
-        # output_string += f" Val now - best {diff_val:.6f} |"
+        output_string += f" Val now - best {diff_val:.6f} |"
 
         diff_val_selbo = val_selbo - best_val_selbo
         # output_string += f" Val SELBO now - best {diff_val_selbo:.6f}"

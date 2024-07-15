@@ -24,7 +24,6 @@ from vae.models.training import (
     write_all_stats,
     update_scheduler,
 )
-
 from vae.models.loss import iwae_loss_fast, standard_loss
 
 logging.basicConfig(
@@ -45,23 +44,55 @@ def training_step(
     latent_noise: float = 0.0,
     cnn=False,
     iw_samples: int = 5,
+    beta=0.1,
+) -> typing.Tuple[float, float]:
+    data = get_view(device=device, input_dim=input_dim, x=data, cnn=cnn)
+    recon_x, mu, logvar = vae.forward(x=data, noise_parameter=latent_noise)
+    vae_loss_enc = standard_loss(x_recon=recon_x, x=data, mu=mu, logvar=logvar, cnn=cnn)
+    iwae_loss = iwae_loss_fast(model=vae, x=data, num_samples=iw_samples)
+
+    # Combined PIWAE Loss for the encoder
+    piwae_loss = beta * vae_loss_enc + (1 - beta) * iwae_loss
+    optimizer_enc.zero_grad()
+    piwae_loss.backward()
+    optimizer_enc.step()
+
+    # VAE Loss for the decoder
+    vae_loss_dec = standard_loss(x_recon=recon_x, x=data, mu=mu, logvar=logvar, cnn=cnn)
+    optimizer_dec.zero_grad()
+    vae_loss_dec.backward()
+    optimizer_dec.step()
+
+    return piwae_loss.item(), vae_loss_dec.item()
+
+
+def training_step(
+    input_dim: int,
+    device: str,
+    vae: nn.Module,
+    optimizer_dec: torch.optim.Optimizer,
+    optimizer_enc: torch.optim.Optimizer,
+    data: typing.Any,
+    latent_noise: float = 0.0,
+    cnn=False,
+    iw_samples: int = 5,
 ) -> typing.Tuple[float, float]:
     data = get_view(device=device, input_dim=input_dim, x=data, cnn=cnn)
 
     # Forward pass
     recon_x, mu, logvar = vae.forward(x=data, noise_parameter=latent_noise)
 
-    # VAE Loss for the decoder
-    vae_loss = standard_loss(x_recon=recon_x, x=data, mu=mu, logvar=logvar, cnn=cnn)
-    optimizer_dec.zero_grad()
-    vae_loss.backward(retain_graph=True)
-    optimizer_dec.step()
-
     # IWAE Loss for the encoder
     iwae_loss = iwae_loss_fast(model=vae, x=data, num_samples=iw_samples)
     optimizer_enc.zero_grad()
     iwae_loss.backward()
     optimizer_enc.step()
+
+    # VAE Loss for the decoder
+    vae_loss = standard_loss(x_recon=recon_x, x=data, mu=mu, logvar=logvar, cnn=cnn)
+    optimizer_dec.zero_grad()
+    vae_loss.backward(retain_graph=True)
+    optimizer_dec.step()
 
 
 def train_vae(
@@ -152,26 +183,17 @@ def train_vae(
             loader=test_loader, **kwargs
         )
 
-        update_scheduler(
-            scheduler_type=scheduler_type,
-            gamma=gamma,
-            scheduler=scheduler_dec,
-            val_loss=val_loss,
-            epoch=epoch,
-            optimizer=optimizer_dec,
-            annealing_end=0,
-            annealing_start=0,
-        )
-        update_scheduler(
-            scheduler_type=scheduler_type,
-            gamma=gamma,
-            scheduler=scheduler_enc,
-            val_loss=val_loss,
-            epoch=epoch,
-            optimizer=optimizer_enc,
-            annealing_end=0,
-            annealing_start=0,
-        )
+        kwargs = {
+            "scheduler_type": scheduler_type,
+            "gamma": gamma,
+            "val_loss": val_loss,
+            "epoch": epoch,
+            "annealing_end": 0,
+            "annealing_start": 0,
+        }
+
+        update_scheduler(scheduler=scheduler_dec, optimizer=optimizer_dec, **kwargs)
+        update_scheduler(scheduler=scheduler_enc, optimizer=optimizer_enc, **kwargs)
 
         log_training_epoch(
             optimizer=optimizer_dec,
@@ -206,27 +228,16 @@ def train_vae(
         epoch_mod = epoch % 50 == 0
 
         if early_stopping or epoch_mod:
-            lm_val = estimate_log_marginal(
-                model=vae,
-                data_loader=validation_loader,
-                device=device,
-                input_dim=input_dim,
-                cnn=cnn,
-            )
-            lm_train = estimate_log_marginal(
-                model=vae,
-                data_loader=train_loader,
-                device=device,
-                input_dim=input_dim,
-                cnn=cnn,
-            )
-            lm_test = estimate_log_marginal(
-                model=vae,
-                data_loader=test_loader,
-                device=device,
-                input_dim=input_dim,
-                cnn=cnn,
-            )
+            kwargs = {
+                "model": vae,
+                "device": device,
+                "input_dim": input_dim,
+                "cnn": cnn,
+            }
+
+            lm_val = estimate_log_marginal(data_loader=validation_loader, **kwargs)
+            lm_train = estimate_log_marginal(data_loader=train_loader, **kwargs)
+            lm_test = estimate_log_marginal(data_loader=test_loader, **kwargs)
             log.info(
                 f"Log marginal likelihood: Val {lm_val:.4f} Tr {lm_train:.4f} Test {lm_test:.4f}"
             )
