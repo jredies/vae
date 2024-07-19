@@ -141,3 +141,5 @@ logs/
 *.log.[0-9]*
 
 outputs/*
+*.gz
+notebooks/data/MNIST/raw/*

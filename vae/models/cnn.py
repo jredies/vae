@@ -61,12 +61,12 @@ class CNN_Encoder(nn.Module):
         self.fc_logvar = nn.Linear(self.output_length, latent_dim)
 
     def _output_convs(self):
-        print("Encoder")
+        # print("Encoder")
         x = torch.rand(1, 1, 28, 28)
-        print(x.shape)
+        # print(x.shape)
         for layer in self.convs:
             x = layer(x)
-            print(x.shape)
+            # print(x.shape)
         return x.shape[1:]
 
     def forward(self, x):
@@ -146,12 +146,12 @@ class CNN_Decoder(nn.Module):
         self._output_convs()
 
     def _output_convs(self):
-        print("Decoder")
+        # print("Decoder")
         x = torch.rand(1, *self.output_dim)
-        print(x.shape)
+        # print(x.shape)
         for layer in self.dconvs:
             x = layer(x)
-            print(x.shape)
+            # print(x.shape)
 
     def forward(self, h):
         x = self.fc(h)

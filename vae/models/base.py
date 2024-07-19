@@ -85,7 +85,7 @@ def main():
 
     for x in list(
         [
-            # 0,
+            0,
             3,
             10,
         ]
