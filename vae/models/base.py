@@ -36,7 +36,7 @@ def run_experiment(iw_samples, path):
     log.info(f"Running iw_samples: {iw_samples}.")
     log.info(f"Save model as {path}.")
 
-    model_name = f"iwae_{iw_samples}_plog_k_500"
+    model_name = f"iwae_{iw_samples}_plog_k_50"
 
     train_vae(
         vae=vae,
