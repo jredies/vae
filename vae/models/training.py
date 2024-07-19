@@ -56,7 +56,7 @@ def estimate_log_marginal(
     data_loader,
     device,
     input_dim: int,
-    num_samples=500,
+    num_samples=100,
     cnn=False,
 ) -> float:
     log_weights = []
