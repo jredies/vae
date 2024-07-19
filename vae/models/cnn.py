@@ -216,40 +216,66 @@ class CNN_VAE(nn.Module):
         return z
 
 
-def run_experiment(iw_samples):
+def run_experiment(iw_samples, path):
     i = 5
     latent_factor = 0.2
 
-    path = "outputs/cnn/output"
-    _path = pathlib.Path(path)
-    _path.mkdir(parents=True, exist_ok=True)
     train_loader, validation_loader, test_loader, dim = get_loaders()
 
     length = np.prod(dim)
     latent_dim = int(length * latent_factor)
 
     model = CNN_VAE(latent_dim=latent_dim, i=i, spectral_norm=False)
-    log.info(f"Running iw_samples: {iw_samples}")
 
-    df_stats = train_vae(
+
+    log.info(f"Running iw_samples: {iw_samples}.")
+    log.info(f"Save model as {path}.")
+
+    model_name = f"cnn_iwae_{iw_samples}_plog_k_1000"
+
+    train_vae(
         vae=model,
         train_loader=train_loader,
         validation_loader=validation_loader,
         test_loader=test_loader,
         dim=dim,
-        epochs=300,
         model_path=path,
+        file_name=model_name,
         cnn=True,
         loss_type="iwae" if iw_samples > 0 else "standard",
         iw_samples=iw_samples,
-        gamma=0.1,
+        gamma=0.25,
+        plateau_patience=7,
+        patience=15,
+        epochs=400,
+        scheduler_type="plateau",
     )
-    df_stats.to_csv(_path / f"iw_cnn_{iw_samples}.csv")
+    model_save_path = path / (model_name + ".pth")
+
+    torch.save(model.state_dict(), model_save_path)
+
+def google_stuff() -> pathlib.Path:
+    try:
+        from google.colab import drive
+
+        log.info("Running on Google Colab.")
+        save_path = "/content/drive/My Drive/thesis/data/"
+        pathlib.Path(save_path).mkdir(parents=True, exist_ok=True)
+        return pathlib.Path(save_path)
+
+    except ImportError:
+        log.info("Not running on Google Colab.")
+        path = "/Users/joachim/Library/Mobile Documents/com~apple~CloudDocs/thesis/data"
+        pathlib.Path(path).mkdir(parents=True, exist_ok=True)
+
+        return pathlib.Path(path)
 
 
 def main():
+    path = google_stuff()
+
     for iw_samples in list([0, 3, 10]):
-        run_experiment(iw_samples=iw_samples)
+        run_experiment(iw_samples=iw_samples, path=path)
 
 
 if __name__ == "__main__":
