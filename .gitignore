@@ -143,3 +143,4 @@ logs/
 outputs/*
 *.gz
 notebooks/data/MNIST/raw/*
+notebooks/*.pdf
