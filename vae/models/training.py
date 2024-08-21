@@ -56,7 +56,7 @@ def estimate_log_marginal(
     data_loader,
     device,
     input_dim: int,
-    num_samples=50,
+    num_samples=100,
     cnn=False,
 ) -> float:
     log_weights = []
@@ -212,7 +212,6 @@ def write_stats(
 
 
 def get_learning_rate(epoch):
-    # Define the learning rate schedule
     initial_lr = 0.001
     decay_factor = 10 ** (-1 / 7)
 
@@ -298,7 +297,7 @@ def train_vae(
         optimizer=optimizer,
     )
 
-    loss_fn = set_loss(loss_type, iw_samples, cnn)
+    loss_fn = set_loss(loss_type, iw_samples=iw_samples, cnn=cnn)
 
     best_val_loss = float("inf")
     best_val_selbo = float("inf")
@@ -359,10 +358,7 @@ def train_vae(
             cnn=cnn,
         )
 
-        # if (epoch == annealing_start) or (epoch == annealing_end):
-        #     set_learning_rate(optimizer, lr=base_learning_rate)
-
-        if True:
+        if epoch > annealing_end:
             update_scheduler(
                 scheduler_type=scheduler_type,
                 gamma=gamma,
@@ -405,7 +401,6 @@ def train_vae(
             best_val_selbo = val_selbo
 
         lm_val, lm_train, lm_test = 0.0, 0.0, 0.0
-
         epoch_mod = epoch % 50 == 0
 
         if early_stopping or epoch_mod:
@@ -466,6 +461,8 @@ def train_vae(
 def set_loss(loss_type, iw_samples, cnn):
     if loss_type == "standard":
         loss_fn = standard_loss
+    elif loss_type == "reconstruction":
+        loss_fn = reconstruction_loss
     elif loss_type == "iwae":
         if cnn:
             loss_fn = functools.partial(iwae_loss_fast_cnn, num_samples=iw_samples)
@@ -494,7 +491,7 @@ def calculate_beta(
     else:
         beta = 1.0
 
-    beta = max(beta, 0.05)
+    # beta = max(beta, 0.05)
 
     return beta
 
@@ -514,7 +511,7 @@ def update_scheduler(
     if gamma < 1.0:
         if scheduler_type == "plateau":
             scheduler.step(val_loss)
-        if (scheduler_type == "step") or (scheduler_type == "exponential"):
+        elif (scheduler_type == "step") or (scheduler_type == "exponential"):
             scheduler.step()
 
 

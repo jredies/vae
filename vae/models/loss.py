@@ -6,7 +6,13 @@ from torch.distributions import normal as dist
 
 
 def standard_loss(
-    x_recon, x, mu, logvar, beta: float = 1.0, cnn=True, **kwargs
+    x_recon,
+    x,
+    mu,
+    logvar,
+    beta: float = 1.0,
+    cnn=True,
+    **kwargs,
 ) -> float:
     # Compute binary cross-entropy loss per sample and then take the mean
     bce = nn.functional.binary_cross_entropy(x_recon, x, reduction="none")

@@ -1,3 +1,4 @@
+import pathlib
 import itertools
 import logging
 import typing
@@ -10,7 +11,6 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 
 from vae.models.training import (
-    calculate_test_loss,
     calculate_stats,
     get_loaders,
     select_device,
@@ -19,6 +19,7 @@ from vae.models.training import (
     update_scheduler,
     log_training_epoch,
     write_all_stats,
+    estimate_log_marginal,
 )
 from vae.models.simple_vae import create_vae_model
 
@@ -38,6 +39,7 @@ def set_learning_rate(optimizer, lr):
 
 def train_vae(
     model_path: str,
+    file_name: str,
     vae: nn.Module,
     train_loader: DataLoader,
     validation_loader: DataLoader,
@@ -80,7 +82,7 @@ def train_vae(
 
     vae.train()
     for epoch in range(epochs):
-        train_loss, train_mse = 0.0, 0.0
+        train_loss, train_recon, train_selbo, mini_batches = 0.0, 0.0, 0.0, 0
 
         beta = calculate_beta(
             annealing_start=annealing_start,
@@ -101,13 +103,14 @@ def train_vae(
             )
 
         for _, (data, _) in enumerate(train_loader):
-            train_loss, train_mse = training_step(
+            train_loss, train_recon, train_selbo = training_step(
                 input_dim=input_dim,
                 device=device,
                 vae=vae,
                 optimizer=optimizer,
                 train_loss=train_loss,
-                train_bce=train_mse,
+                train_recon=train_recon,
+                train_selbo=train_selbo,
                 data=data,
                 gaussian_noise=gaussian_noise,
                 salt_and_pepper_noise=salt_and_pepper_noise,
@@ -115,22 +118,22 @@ def train_vae(
                 clip_gradient=clip_gradient,
                 beta=beta,
             )
+            mini_batches += 1
 
-        n_train = len(train_loader.dataset)
-        train_loss /= n_train
-        train_mse /= n_train
+        train_loss /= mini_batches
+        train_recon /= mini_batches
+        train_selbo /= mini_batches
 
         vae.eval()
-        val_loss, val_mse = calculate_stats(
+        val_loss, val_recon, val_selbo = calculate_stats(
             vae=vae,
             loader=validation_loader,
             device=device,
             input_dim=input_dim,
-            beta=beta,
         )
-        test_loss, test_mse = calculate_test_loss(
+        test_loss, test_recon, test_selbo = calculate_stats(
             vae=vae,
-            test_loader=test_loader,
+            loader=test_loader,
             device=device,
             input_dim=input_dim,
         )
@@ -140,28 +143,35 @@ def train_vae(
             gamma=gamma,
             scheduler=scheduler,
             val_loss=val_loss,
+            epoch=epoch,
+            annealing_start=annealing_start,
+            annealing_end=annealing_stop,
+            optimizer=optimizer,
         )
 
-        write_all_stats(
-            writer=writer,
-            df_stats=df_stats,
-            epoch=epoch,
-            train_loss=train_loss,
-            train_bce=train_mse,
-            val_loss=val_loss,
-            val_kld=val_mse,
-            test_loss=test_loss,
-            test_bce=test_mse,
-        )
         log_training_epoch(
             optimizer=optimizer,
             best_val_loss=best_val_loss,
+            best_val_selbo=best_val_loss,
             epoch=epoch,
             train_loss=train_loss,
-            train_bce=train_mse,
+            train_recon=train_recon,
+            train_selbo=train_selbo,
             val_loss=val_loss,
-            val_mse=val_mse,
+            val_recon=val_recon,
+            val_selbo=val_selbo,
+            vae=vae,
+            beta=beta,
         )
+
+        early_stopping = False
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+        elif epoch < annealing_stop:
+            patience_counter = 0
+        else:
+            patience_counter += 1
 
         if epoch > annealing_stop:
             if val_loss < best_val_loss:
@@ -173,8 +183,57 @@ def train_vae(
                 log.info("Early stopping triggered.")
                 break
 
+        epoch_mod = epoch % 50 == 0
+
+        if early_stopping or epoch_mod:
+            lm_val = estimate_log_marginal(
+                model=vae,
+                data_loader=validation_loader,
+                device=device,
+                input_dim=input_dim,
+            )
+            lm_train = estimate_log_marginal(
+                model=vae,
+                data_loader=train_loader,
+                device=device,
+                input_dim=input_dim,
+            )
+            lm_test = estimate_log_marginal(
+                model=vae,
+                data_loader=test_loader,
+                device=device,
+                input_dim=input_dim,
+            )
+            log.info(
+                f"Log marginal likelihood: Val {lm_val:.4f} Tr {lm_train:.4f} Test {lm_test:.4f}"
+            )
+
+        write_all_stats(
+            writer=writer,
+            df_stats=df_stats,
+            epoch=epoch,
+            train_loss=train_loss,
+            train_lm=lm_train,
+            train_recon=train_recon,
+            train_selbo=train_selbo,
+            val_loss=val_loss,
+            val_lm=lm_val,
+            val_recon=val_recon,
+            val_selbo=val_selbo,
+            test_loss=test_loss,
+            test_lm=lm_test,
+            test_recon=test_recon,
+            test_selbo=test_selbo,
+            best_val_loss=best_val_loss,
+            beta=beta,
+        )
+        if (epoch % 20 == 0) or early_stopping:
+            df_stats.to_csv(pathlib.Path(model_path) / f"{file_name}.csv")
+
+        if early_stopping:
+            break
+
     writer.close()
-    return df_stats
 
 
 def calculate_beta(
@@ -213,10 +272,11 @@ def main():
         # 20,
     ]
     lengths = [
+        5,
+        50,
+        75,
+        100,
         0,
-        # 50,
-        # 75,
-        # 100,
     ]
     params = itertools.product(start, lengths)
     params = list(params)
@@ -224,9 +284,11 @@ def main():
 
     for start, length in params:
         vae = create_vae_model(dim=dim, latent_dim_factor=latent_factor)
+        filename = f"linear_start-{start}_len-{length}"
 
         df_stats = train_vae(
             vae=vae,
+            file_name=filename,
             train_loader=train_loader,
             validation_loader=validation_loader,
             test_loader=test_loader,
@@ -235,10 +297,12 @@ def main():
             gamma=0.25,
             annealing_start=start,
             annealing_stop=start + length,
-            annealing_method="step",
+            annealing_method="linear",
+            patience=15,
+            plateau_patience=7,
+            epochs=400,
+            scheduler_type="plateau",
         )
-
-        df_stats.to_csv(f"{path}/step_start-{start}_len-{length}.csv")
 
 
 if __name__ == "__main__":

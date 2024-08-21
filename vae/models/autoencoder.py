@@ -22,13 +22,10 @@ log = logging.getLogger(__name__)
 
 def run_experiment(
     path: str,
-    gamma: float,
 ):
     n_layers = 3
     geometry = "flat"
     latent_dim_factor = 0.2
-    iw_samples = 0
-
     train_loader, validation_loader, test_loader, dim = get_loaders()
 
     vae = create_vae_model(
@@ -37,10 +34,7 @@ def run_experiment(
         geometry=geometry,
         latent_dim_factor=latent_dim_factor,
     )
-    log.info(f"Running iw_samples: {iw_samples}.")
-    log.info(f"Save model as {path}.")
-
-    model_name = f"gamma_{gamma}"
+    model_name = f"autoencoder"
 
     train_vae(
         vae=vae,
@@ -50,20 +44,17 @@ def run_experiment(
         dim=dim,
         model_path=path,
         file_name=model_name,
-        loss_type="iwae" if iw_samples > 0 else "standard",
-        iw_samples=iw_samples,
-        gamma=gamma,
+        loss_type="reconstruction",
+        gamma=0.25,
         plateau_patience=7,
         patience=15,
         epochs=400,
         scheduler_type="plateau",
+        annealing_type="step",
     )
 
     model_save_path = path / (model_name + ".pth")
     torch.save(vae.state_dict(), model_save_path)
-
-
-sys.excepthook = exception_hook
 
 
 def google_stuff() -> pathlib.Path:
@@ -86,11 +77,7 @@ def google_stuff() -> pathlib.Path:
 def main():
     path = google_stuff()
 
-    params = [0.1, 1.0]
-
-    for gamma in params:
-        log.info(f"Running experiment with gamma {gamma}.")
-        run_experiment(path=path, gamma=gamma)
+    run_experiment(path=path)
 
 
 if __name__ == "__main__":

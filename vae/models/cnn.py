@@ -216,9 +216,10 @@ class CNN_VAE(nn.Module):
         return z
 
 
-def run_experiment(iw_samples, path):
+def run_experiment(gamma: float, path: str):
     i = 5
     latent_factor = 0.2
+    iw_samples = 0
 
     train_loader, validation_loader, test_loader, dim = get_loaders()
 
@@ -226,12 +227,9 @@ def run_experiment(iw_samples, path):
     latent_dim = int(length * latent_factor)
 
     model = CNN_VAE(latent_dim=latent_dim, i=i, spectral_norm=False)
+    log.info(f"Running for gamma {gamma}.")
 
-
-    log.info(f"Running iw_samples: {iw_samples}.")
-    log.info(f"Save model as {path}.")
-
-    model_name = f"cnn_iwae_{iw_samples}_plog_k_50"
+    model_name = f"cnn_gamma_{gamma}"
 
     train_vae(
         vae=model,
@@ -244,15 +242,15 @@ def run_experiment(iw_samples, path):
         cnn=True,
         loss_type="iwae" if iw_samples > 0 else "standard",
         iw_samples=iw_samples,
-        gamma=0.25,
+        gamma=gamma,
         plateau_patience=7,
         patience=15,
         epochs=400,
         scheduler_type="plateau",
     )
     model_save_path = path / (model_name + ".pth")
-
     torch.save(model.state_dict(), model_save_path)
+
 
 def google_stuff() -> pathlib.Path:
     try:
@@ -274,8 +272,8 @@ def google_stuff() -> pathlib.Path:
 def main():
     path = google_stuff()
 
-    for iw_samples in list([0, 3, 10]):
-        run_experiment(iw_samples=iw_samples, path=path)
+    for gamma in [0.1, 1.0]:
+        run_experiment(gamma=gamma, path=path)
 
 
 if __name__ == "__main__":
